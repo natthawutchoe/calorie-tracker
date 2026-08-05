@@ -235,14 +235,25 @@
 
     async function init(){
       document.documentElement.dataset.theme=state.theme;
-      await restoreUsersFromSheet();
       migrateUsers();
-      await syncBootstrap();
       await loadLog(state.viewDate,true);
       state.loaded=true;
       render();
-      sheetSupportsBatch().catch(()=>{});
-      if(state.profile) queueAutoSync();
+      syncAfterInitialPaint();
+    }
+    async function syncAfterInitialPaint(){
+      setTimeout(async ()=>{
+        try{
+          await restoreUsersFromSheet();
+          migrateUsers();
+          await syncBootstrap();
+          await loadLog(state.viewDate,true);
+          if(state.profile&&state.tab==="settings") state.tab="home";
+          render();
+          sheetSupportsBatch().catch(()=>{});
+          if(state.profile) queueAutoSync();
+        }catch{}
+      },0);
     }
     async function fetchTimeout(url,options={},ms=3500){ const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),ms); try{return await fetch(url,{...options,signal:ctrl.signal});} finally{clearTimeout(timer);} }
     async function sheetGet(key){ const res=await fetchTimeout(`${SHEET_API}?key=${encodeURIComponent(key)}`,{cache:"no-store"}); if(!res.ok)throw new Error(`HTTP ${res.status}`); const data=await res.json(); if(!data.ok)throw new Error(data.error||"unknown error"); return data.value; }
