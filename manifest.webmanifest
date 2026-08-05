@@ -1,0 +1,17 @@
+{
+  "name": "Calorie Tracker",
+  "short_name": "แคลอรี",
+  "description": "เว็บแอปติดตามแคลอรีรายวันสำหรับเพิ่มน้ำหนัก",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
