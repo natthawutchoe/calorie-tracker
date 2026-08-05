@@ -3,9 +3,10 @@ const USERS_SHEET = "Users";
 const PROFILES_SHEET = "Profiles";
 const FOODS_SHEET = "Foods";
 const LOGS_SHEET = "Logs";
+const SPREADSHEET_ID = "1u7iTIX_Rw73tvnb5XMjorbwSCjNN0YaDkztSW6k2MFE";
 
 function sheet_(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
   if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
