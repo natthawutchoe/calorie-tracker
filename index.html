@@ -192,12 +192,11 @@
       try{
         const remoteUsersRaw=await sheetGet("users");
         const remoteUsers=normalizeUsers(JSON.parse(remoteUsersRaw||"[]"));
-        if(remoteUsers.length){
-          const merged=normalizeUsers([...localUsers,...remoteUsers]);
-          state.users=merged;
-          state.currentUserId=merged.some(u=>u.id===localCurrent) ? localCurrent : "";
-          saveUsers();
-        }
+        const merged=remoteUsers.length ? normalizeUsers([...localUsers,...remoteUsers]) : [];
+        state.users=merged;
+        state.currentUserId=merged.some(u=>u.id===localCurrent) ? localCurrent : "";
+        if(!state.currentUserId) localStorage.removeItem(LOCAL_PREFIX+"selectedUserConfirmed");
+        saveUsers();
       }catch{}
     }
     function migrateUsers(){
@@ -297,7 +296,6 @@
           stopLoading();
           render();
           sheetSupportsBatch().catch(()=>{});
-          if(state.profile) queueAutoSync();
         }catch{
           state.bootstrapping=false;
           stopLoading();
@@ -328,7 +326,7 @@
     async function syncBootstrap(){
       try{
         const remoteUsers=await sheetGet("users");
-        if(remoteUsers){
+        if(remoteUsers !== ""){
           const merged=normalizeUsers([...state.users,...normalizeUsers(JSON.parse(remoteUsers))]);
           state.users=merged; saveUsers();
         }
