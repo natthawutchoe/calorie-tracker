@@ -241,6 +241,7 @@
       await loadLog(state.viewDate,true);
       state.loaded=true;
       render();
+      sheetSupportsBatch().catch(()=>{});
       if(state.profile) queueAutoSync();
     }
     async function fetchTimeout(url,options={},ms=3500){ const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),ms); try{return await fetch(url,{...options,signal:ctrl.signal});} finally{clearTimeout(timer);} }
@@ -285,7 +286,7 @@
         {key:storageKey("foods"),value:JSON.stringify(state.foods)},
         {key:storageKey(`log:${state.viewDate}`),value:JSON.stringify(state.logs[state.viewDate]||[])}
       ];
-      if(await sheetSupportsBatch()){
+      if(sheetBatchSupport===true){
         try{
           await sheetSetMany(items);
         }catch(err){
