@@ -129,6 +129,7 @@ function syncUserData_(key, value) {
 }
 
 function doGet(e) {
+  if (e.parameter && e.parameter.cap === "batch") return json_({ ok: true, batch: true });
   const key = String((e.parameter && e.parameter.key) || "");
   if (!key) return json_({ ok: false, error: "missing key" });
   return json_({ ok: true, key, value: getRaw_(key) });
