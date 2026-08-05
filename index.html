@@ -240,7 +240,16 @@
       try{ const remoteProfile=await sheetGet(storageKey("profile")); if(remoteProfile){ state.profile=JSON.parse(remoteProfile); writeJson(storageKey("profile"),state.profile); } }catch{}
       try{ const remoteFoods=await sheetGet(storageKey("foods")); if(remoteFoods){ state.foods=normalizeFoods(JSON.parse(remoteFoods)); writeJson(storageKey("foods"),state.foods); } }catch{}
     }
-    async function syncUpload(){ await sheetSet("users",JSON.stringify(state.users)); await sheetSet(storageKey("profile"),JSON.stringify(state.profile)); await sheetSet(storageKey("foods"),JSON.stringify(state.foods)); await sheetSet(storageKey(`log:${state.viewDate}`),JSON.stringify(state.logs[state.viewDate]||[])); state.notice=`ซิงก์ข้อมูลของ ${userLabel()} แล้ว`; render(); }
+    async function syncUpload(){
+      await Promise.all([
+        sheetSet("users",JSON.stringify(state.users)),
+        sheetSet(storageKey("profile"),JSON.stringify(state.profile)),
+        sheetSet(storageKey("foods"),JSON.stringify(state.foods)),
+        sheetSet(storageKey(`log:${state.viewDate}`),JSON.stringify(state.logs[state.viewDate]||[]))
+      ]);
+      state.notice=`ซิงก์ข้อมูลของ ${userLabel()} แล้ว`;
+      render();
+    }
     async function syncDownload(){ await syncBootstrap(); const log=await sheetGet(storageKey(`log:${state.viewDate}`)); if(log){ state.logs[state.viewDate]=JSON.parse(log); writeJson(storageKey(`log:${state.viewDate}`),state.logs[state.viewDate]); } state.notice=`ดึงข้อมูลของ ${userLabel()} แล้ว`; render(); }
     async function loadLog(iso,force=false){ if(state.logs[iso]&&!force)return; state.logs[iso]=readJson(storageKey(`log:${iso}`),[]); }
     function persistProfile(p){ state.profile=p; writeJson(storageKey("profile"),p); state.tab="home"; render(); }
