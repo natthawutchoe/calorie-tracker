@@ -1,4 +1,37 @@
-<!doctype html>
+ms=12000function normalizeUserName(name){ return String(name||"").trim().replace(/\s+/g," ").toLowerCase(); }
+    function normalizeUsers(users){
+      const seenIds=new Set(), seenNames=new Set(), out=[];
+      (users||[]).forEach(u=>{
+        if(!u||!u.id||!u.name)return;
+        const id=String(u.id);
+        const name=String(u.name).trim();
+        const nameKey=normalizeUserName(name);
+        if(!name||seenIds.has(id)||seenNames.has(nameKey))return;
+        seenIds.add(id);
+        seenNames.add(nameKey);
+        out.push({id,name});
+      });
+      return out;
+    }const merged=normalizeUsers([...localUsers,...remoteUsers]);const merged=normalizeUsers([...state.users,...normalizeUsers(JSON.parse(remoteUsers))]);async function syncUpload(silent=false){
+      if(state.syncing){
+        if(!silent){
+          stopLoading();
+          state.notice="กำลังซิงก์อยู่ รอให้งานก่อนหน้าจบก่อน";
+          render();
+        }
+        return;
+      }
+      state.syncing=true;      }finally{
+        state.syncing=false;
+        if(!silent) stopLoading();
+        render();
+      }      try{
+        await syncDownload();
+      }catch(err){
+        stopLoading();
+        state.notice="ชีตตอบช้า ใช้ข้อมูลในเครื่องก่อน";
+      }
+      state.tab=state.profile ? "home" : "settings";}catch(err){state.bootstrapping=false;state.syncing=false;stopLoading();state.notice=<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
