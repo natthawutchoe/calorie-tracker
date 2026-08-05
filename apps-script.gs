@@ -1,13 +1,35 @@
-const SHEET_NAME = "Data";
+const RAW_SHEET = "RawData";
+const USERS_SHEET = "Users";
+const PROFILES_SHEET = "Profiles";
+const FOODS_SHEET = "Foods";
+const LOGS_SHEET = "Logs";
 
-function getSheet_() {
+function sheet_(name, headers) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.getRange(1, 1, 1, 3).setValues([["key", "value", "updatedAt"]]);
-  }
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   return sheet;
+}
+
+function rawSheet_() {
+  return sheet_(RAW_SHEET, ["key", "value", "updatedAt"]);
+}
+
+function usersSheet_() {
+  return sheet_(USERS_SHEET, ["userId", "userName", "updatedAt"]);
+}
+
+function profilesSheet_() {
+  return sheet_(PROFILES_SHEET, ["userId", "userName", "profileJson", "updatedAt"]);
+}
+
+function foodsSheet_() {
+  return sheet_(FOODS_SHEET, ["userId", "userName", "foodCount", "foodsJson", "updatedAt"]);
+}
+
+function logsSheet_() {
+  return sheet_(LOGS_SHEET, ["userId", "userName", "date", "totalKcal", "entryCount", "entriesJson", "updatedAt"]);
 }
 
 function json_(payload) {
@@ -16,17 +38,92 @@ function json_(payload) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function findRowByValue_(sheet, col, value) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+  const index = values.findIndex((row) => String(row[0]) === String(value));
+  return index >= 0 ? index + 2 : 0;
+}
+
+function findRowByTwoValues_(sheet, colA, valueA, colB, valueB) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  const index = values.findIndex((row) => String(row[colA - 1]) === String(valueA) && String(row[colB - 1]) === String(valueB));
+  return index >= 0 ? index + 2 : 0;
+}
+
+function upsertRaw_(key, value) {
+  const sheet = rawSheet_();
+  const row = findRowByValue_(sheet, 1, key) || sheet.getLastRow() + 1;
+  sheet.getRange(row, 1, 1, 3).setValues([[key, value, new Date()]]);
+}
+
+function getRaw_(key) {
+  const sheet = rawSheet_();
+  const row = findRowByValue_(sheet, 1, key);
+  if (!row) return "";
+  return String(sheet.getRange(row, 2).getValue() || "");
+}
+
+function parseUserKey_(key) {
+  const match = String(key || "").match(/^user:([^:]+):(profile|foods|log)(?::(.+))?$/);
+  if (!match) return null;
+  return { userId: match[1], type: match[2], date: match[3] || "" };
+}
+
+function userName_(userId) {
+  const sheet = usersSheet_();
+  const row = findRowByValue_(sheet, 1, userId);
+  return row ? String(sheet.getRange(row, 2).getValue() || "") : "";
+}
+
+function syncUsers_(value) {
+  const users = JSON.parse(value || "[]");
+  const sheet = usersSheet_();
+  users.forEach((user) => {
+    if (!user || !user.id) return;
+    const row = findRowByValue_(sheet, 1, user.id) || sheet.getLastRow() + 1;
+    sheet.getRange(row, 1, 1, 3).setValues([[String(user.id), String(user.name || ""), new Date()]]);
+  });
+}
+
+function syncUserData_(key, value) {
+  const meta = parseUserKey_(key);
+  if (!meta) return;
+  const name = userName_(meta.userId);
+
+  if (meta.type === "profile") {
+    const sheet = profilesSheet_();
+    const row = findRowByValue_(sheet, 1, meta.userId) || sheet.getLastRow() + 1;
+    sheet.getRange(row, 1, 1, 4).setValues([[meta.userId, name, value, new Date()]]);
+    return;
+  }
+
+  if (meta.type === "foods") {
+    let foods = [];
+    try { foods = JSON.parse(value || "[]"); } catch (err) {}
+    const sheet = foodsSheet_();
+    const row = findRowByValue_(sheet, 1, meta.userId) || sheet.getLastRow() + 1;
+    sheet.getRange(row, 1, 1, 5).setValues([[meta.userId, name, foods.length, value, new Date()]]);
+    return;
+  }
+
+  if (meta.type === "log") {
+    let entries = [];
+    try { entries = JSON.parse(value || "[]"); } catch (err) {}
+    const total = entries.reduce((sum, item) => sum + Number(item.kcal || 0), 0);
+    const sheet = logsSheet_();
+    const row = findRowByTwoValues_(sheet, 1, meta.userId, 3, meta.date) || sheet.getLastRow() + 1;
+    sheet.getRange(row, 1, 1, 7).setValues([[meta.userId, name, meta.date, total, entries.length, value, new Date()]]);
+  }
+}
+
 function doGet(e) {
   const key = String((e.parameter && e.parameter.key) || "");
   if (!key) return json_({ ok: false, error: "missing key" });
-
-  const sheet = getSheet_();
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return json_({ ok: true, key, value: "" });
-
-  const rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-  const found = rows.find((row) => String(row[0]) === key);
-  return json_({ ok: true, key, value: found ? String(found[1] || "") : "" });
+  return json_({ ok: true, key, value: getRaw_(key) });
 }
 
 function doPost(e) {
@@ -39,16 +136,9 @@ function doPost(e) {
     const lock = LockService.getScriptLock();
     lock.waitLock(5000);
     try {
-      const sheet = getSheet_();
-      const lastRow = sheet.getLastRow();
-      let targetRow = 0;
-      if (lastRow >= 2) {
-        const keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        const index = keys.findIndex((row) => String(row[0]) === key);
-        if (index >= 0) targetRow = index + 2;
-      }
-      if (!targetRow) targetRow = sheet.getLastRow() + 1;
-      sheet.getRange(targetRow, 1, 1, 3).setValues([[key, value, new Date()]]);
+      upsertRaw_(key, value);
+      if (key === "users") syncUsers_(value);
+      else syncUserData_(key, value);
       return json_({ ok: true, key });
     } finally {
       lock.releaseLock();
