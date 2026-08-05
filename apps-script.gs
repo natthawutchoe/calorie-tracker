@@ -5,8 +5,15 @@ const FOODS_SHEET = "Foods";
 const LOGS_SHEET = "Logs";
 const SPREADSHEET_ID = "1u7iTIX_Rw73tvnb5XMjorbwSCjNN0YaDkztSW6k2MFE";
 
+let spreadsheet__;
+
+function spreadsheet_() {
+  if (!spreadsheet__) spreadsheet__ = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return spreadsheet__;
+}
+
 function sheet_(name, headers) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = spreadsheet_();
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
   if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -130,17 +137,26 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-    const key = String(body.key || "");
-    const value = String(body.value == null ? "" : body.value);
-    if (!key) return json_({ ok: false, error: "missing key" });
+    const items = Array.isArray(body.items)
+      ? body.items
+      : [{ key: body.key, value: body.value }];
+    const normalized = items
+      .map((item) => ({
+        key: String((item && item.key) || ""),
+        value: String(item && item.value == null ? "" : item.value),
+      }))
+      .filter((item) => item.key);
+    if (!normalized.length) return json_({ ok: false, error: "missing key" });
 
     const lock = LockService.getScriptLock();
     lock.waitLock(5000);
     try {
-      upsertRaw_(key, value);
-      if (key === "users") syncUsers_(value);
-      else syncUserData_(key, value);
-      return json_({ ok: true, key });
+      normalized.forEach((item) => {
+        upsertRaw_(item.key, item.value);
+        if (item.key === "users") syncUsers_(item.value);
+        else syncUserData_(item.key, item.value);
+      });
+      return json_({ ok: true, count: normalized.length, key: normalized[0].key });
     } finally {
       lock.releaseLock();
     }
