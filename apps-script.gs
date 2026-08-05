@@ -62,10 +62,33 @@ function findRowByTwoValues_(sheet, colA, valueA, colB, valueB) {
   return index >= 0 ? index + 2 : 0;
 }
 
+function rowMapByCol_(sheet, col) {
+  const lastRow = sheet.getLastRow();
+  const map = {};
+  if (lastRow < 2) return map;
+  const values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+  values.forEach((row, index) => {
+    map[String(row[0])] = index + 2;
+  });
+  return map;
+}
+
 function upsertRaw_(key, value) {
   const sheet = rawSheet_();
   const row = findRowByValue_(sheet, 1, key) || sheet.getLastRow() + 1;
   sheet.getRange(row, 1, 1, 3).setValues([[key, value, new Date()]]);
+}
+
+function upsertRawItems_(items) {
+  const sheet = rawSheet_();
+  const rowsByKey = rowMapByCol_(sheet, 1);
+  let nextRow = sheet.getLastRow() + 1;
+  const now = new Date();
+  items.forEach((item) => {
+    const row = rowsByKey[item.key] || nextRow++;
+    rowsByKey[item.key] = row;
+    sheet.getRange(row, 1, 1, 3).setValues([[item.key, item.value, now]]);
+  });
 }
 
 function getRaw_(key) {
@@ -90,17 +113,22 @@ function userName_(userId) {
 function syncUsers_(value) {
   const users = JSON.parse(value || "[]");
   const sheet = usersSheet_();
+  const rowsByUserId = rowMapByCol_(sheet, 1);
+  let nextRow = sheet.getLastRow() + 1;
+  const now = new Date();
   users.forEach((user) => {
     if (!user || !user.id) return;
-    const row = findRowByValue_(sheet, 1, user.id) || sheet.getLastRow() + 1;
-    sheet.getRange(row, 1, 1, 3).setValues([[String(user.id), String(user.name || ""), new Date()]]);
+    const id = String(user.id);
+    const row = rowsByUserId[id] || nextRow++;
+    rowsByUserId[id] = row;
+    sheet.getRange(row, 1, 1, 3).setValues([[id, String(user.name || ""), now]]);
   });
 }
 
-function syncUserData_(key, value) {
+function syncUserData_(key, value, userNames) {
   const meta = parseUserKey_(key);
   if (!meta) return;
-  const name = userName_(meta.userId);
+  const name = (userNames && userNames[meta.userId]) || userName_(meta.userId);
 
   if (meta.type === "profile") {
     const sheet = profilesSheet_();
@@ -152,10 +180,17 @@ function doPost(e) {
     const lock = LockService.getScriptLock();
     lock.waitLock(5000);
     try {
+      upsertRawItems_(normalized);
+      const usersItem = normalized.find((item) => item.key === "users");
+      const userNames = {};
+      if (usersItem) {
+        syncUsers_(usersItem.value);
+        JSON.parse(usersItem.value || "[]").forEach((user) => {
+          if (user && user.id) userNames[String(user.id)] = String(user.name || "");
+        });
+      }
       normalized.forEach((item) => {
-        upsertRaw_(item.key, item.value);
-        if (item.key === "users") syncUsers_(item.value);
-        else syncUserData_(item.key, item.value);
+        if (item.key !== "users") syncUserData_(item.key, item.value, userNames);
       });
       return json_({ ok: true, count: normalized.length, key: normalized[0].key });
     } finally {
