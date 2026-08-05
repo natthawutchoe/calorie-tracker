@@ -161,6 +161,21 @@
     function normalizeUsers(users){ return (users||[]).filter(u=>u&&u.id&&u.name).map(u=>({id:String(u.id),name:String(u.name)})); }
     function normalizeFoods(foods){ return (foods||[]).filter(f=>f&&f.id&&f.name&&Number(f.kcal)>0).map(f=>({id:String(f.id),name:String(f.name),kcal:Number(f.kcal)})); }
     function saveUsers(){ writeJson("users",state.users); localStorage.setItem(LOCAL_PREFIX+"currentUserId",state.currentUserId); }
+    async function restoreUsersFromSheet(){
+      const localUsers=normalizeUsers(readJson("users",[]));
+      const localCurrent=localStorage.getItem(LOCAL_PREFIX+"currentUserId") || localUsers[0]?.id || "";
+      const localProfile=localCurrent ? readJson(`user:${localCurrent}:profile`,null) : null;
+      if(localUsers.length && localProfile) return;
+      try{
+        const remoteUsersRaw=await sheetGet("users");
+        const remoteUsers=normalizeUsers(JSON.parse(remoteUsersRaw||"[]"));
+        if(remoteUsers.length){
+          state.users=remoteUsers;
+          state.currentUserId=remoteUsers[0].id;
+          saveUsers();
+        }
+      }catch{}
+    }
     function migrateUsers(){
       state.users=normalizeUsers(readJson("users",[]));
       state.currentUserId=localStorage.getItem(LOCAL_PREFIX+"currentUserId") || state.users[0]?.id || "";
@@ -219,11 +234,13 @@
 
     async function init(){
       document.documentElement.dataset.theme=state.theme;
+      await restoreUsersFromSheet();
       migrateUsers();
+      await syncBootstrap();
       await loadLog(state.viewDate,true);
       state.loaded=true;
       render();
-      syncBootstrap().then(async()=>{ await loadLog(state.viewDate,true); render(); }).catch(()=>{});
+      if(state.profile) queueAutoSync();
     }
     async function fetchTimeout(url,options={},ms=3500){ const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),ms); try{return await fetch(url,{...options,signal:ctrl.signal});} finally{clearTimeout(timer);} }
     async function sheetGet(key){ const res=await fetchTimeout(`${SHEET_API}?key=${encodeURIComponent(key)}`,{cache:"no-store"}); if(!res.ok)throw new Error(`HTTP ${res.status}`); const data=await res.json(); if(!data.ok)throw new Error(data.error||"unknown error"); return data.value; }
@@ -240,23 +257,36 @@
       try{ const remoteProfile=await sheetGet(storageKey("profile")); if(remoteProfile){ state.profile=JSON.parse(remoteProfile); writeJson(storageKey("profile"),state.profile); } }catch{}
       try{ const remoteFoods=await sheetGet(storageKey("foods")); if(remoteFoods){ state.foods=normalizeFoods(JSON.parse(remoteFoods)); writeJson(storageKey("foods"),state.foods); } }catch{}
     }
-    async function syncUpload(){
+    async function syncUpload(silent=false){
+      if(state.syncing)return;
+      state.syncing=true;
+      try{
       await Promise.all([
         sheetSet("users",JSON.stringify(state.users)),
         sheetSet(storageKey("profile"),JSON.stringify(state.profile)),
         sheetSet(storageKey("foods"),JSON.stringify(state.foods)),
         sheetSet(storageKey(`log:${state.viewDate}`),JSON.stringify(state.logs[state.viewDate]||[]))
       ]);
-      state.notice=`ซิงก์ข้อมูลของ ${userLabel()} แล้ว`;
-      render();
+      if(!silent){
+        state.notice=`ซิงก์ข้อมูลของ ${userLabel()} แล้ว`;
+        render();
+      }
+      }finally{
+        state.syncing=false;
+      }
+    }
+    function queueAutoSync(){
+      if(!state.currentUserId)return;
+      clearTimeout(autoSyncTimer);
+      autoSyncTimer=setTimeout(()=>syncUpload(true).catch(()=>{}),1200);
     }
     async function syncDownload(){ await syncBootstrap(); const log=await sheetGet(storageKey(`log:${state.viewDate}`)); if(log){ state.logs[state.viewDate]=JSON.parse(log); writeJson(storageKey(`log:${state.viewDate}`),state.logs[state.viewDate]); } state.notice=`ดึงข้อมูลของ ${userLabel()} แล้ว`; render(); }
     async function loadLog(iso,force=false){ if(state.logs[iso]&&!force)return; state.logs[iso]=readJson(storageKey(`log:${iso}`),[]); }
-    function persistProfile(p){ state.profile=p; writeJson(storageKey("profile"),p); state.tab="home"; render(); }
-    function persistLog(iso,entries){ state.logs[iso]=entries; writeJson(storageKey(`log:${iso}`),entries); render(); }
+    function persistProfile(p){ state.profile=p; writeJson(storageKey("profile"),p); state.tab="home"; render(); queueAutoSync(); }
+    function persistLog(iso,entries){ state.logs[iso]=entries; writeJson(storageKey(`log:${iso}`),entries); render(); queueAutoSync(); }
     function addEntry(name,kcal){ const iso=state.viewDate; const entry={id:uid(),name,kcal:Number(kcal),time:new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"})}; persistLog(iso,[...(state.logs[iso]||[]),entry]); state.modal=null; render(); }
     function deleteEntry(id){ persistLog(state.viewDate,(state.logs[state.viewDate]||[]).filter(e=>e.id!==id)); }
-    function saveFoods(){ state.foods=normalizeFoods(state.foods); writeJson(storageKey("foods"),state.foods); render(); }
+    function saveFoods(){ state.foods=normalizeFoods(state.foods); writeJson(storageKey("foods"),state.foods); render(); queueAutoSync(); }
     function createFood(name,kcal){ const clean=name.trim(); const calories=Number(kcal); if(!clean||calories<=0)return; state.foods=[...state.foods,{id:uid(),name:clean,kcal:calories}]; state.modal=null; saveFoods(); }
     function deleteFood(id){ state.foods=state.foods.filter(f=>f.id!==id); saveFoods(); }
     function openDate(iso){ state.viewDate=iso; loadLog(iso); render(); }
@@ -286,6 +316,7 @@
       saveUsers();
       await loadLog(state.viewDate,true);
       render();
+      queueAutoSync();
     }
     async function deleteCurrentUser(){
       if(state.users.length<=1){ state.notice="ต้องมีผู้ใช้อย่างน้อย 1 คน"; state.modal=null; render(); return; }
@@ -299,8 +330,9 @@
       state.tab=state.profile ? "home" : "settings";
       saveUsers();
       await loadLog(state.viewDate,true);
-      state.notice="ลบผู้ใช้แล้ว กดส่งขึ้นชีตเพื่ออัปเดตรายชื่อบน Google Sheets";
+      state.notice="ลบผู้ใช้แล้ว กำลังซิงก์รายชื่อขึ้น Google Sheets";
       render();
+      queueAutoSync();
     }
 
     function render(){ const app=document.getElementById("app"); document.querySelector('meta[name="theme-color"]').setAttribute("content",state.theme==="dark"?"#0a0a0a":"#ffffff"); if(!state.loaded){ app.className="status"; app.innerHTML='<span class="overline">loading</span>'; return; } app.className=""; app.innerHTML=(!state.profile||state.tab==="settings")?renderOnboard():renderHome(); bind(); }
@@ -318,7 +350,7 @@
       if(state.modal.type==="quick")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;line-height:1.35">${state.modal.name}</div><div class="hint" style="text-align:left;margin:4px 0 16px">ปรับแคลได้ถ้าปริมาณไม่ตรง</div><div class="field-row"><input id="modal-kcal" class="field mono" type="number" inputmode="numeric" value="${state.modal.kcal}"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-quick">${icon("check")}<span>เพิ่มรายการ</span></button></div></div>`;
       if(state.modal.type==="food")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มเมนูที่กินบ่อย</div><input id="food-name" class="field" data-calorie-name="food-name" placeholder="ชื่ออาหาร เช่น ข้าวมันไก่"><div class="estimate-box" data-estimate-for="food-name"><div class="hint" style="text-align:left;margin:0">พิมพ์ชื่อเมนูเพื่อให้ระบบเดาค่าแคลจากฐานข้อมูลในแอป</div></div><div class="field-row"><input id="food-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-food">${icon("check")}<span>บันทึกเมนู</span></button></div></div>`;
       if(state.modal.type==="user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มผู้ใช้งาน</div><input id="user-name" class="field" placeholder="ชื่อผู้ใช้ เช่น คุณพ่อ"><button class="primary" style="margin-top:16px" data-action="confirm-user">${icon("check")}<span>สร้างผู้ใช้</span></button></div></div>`;
-      if(state.modal.type==="delete-user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:8px">ลบผู้ใช้ ${userLabel()}</div><p class="hint" style="text-align:left;margin:0 0 16px">ผู้ใช้นี้จะถูกเอาออกจากรายการในเครื่องนี้ ข้อมูลในชีตจะอัปเดตเมื่อกดส่งขึ้นชีต</p><button class="primary" style="margin-top:16px;background:#b42318;color:#fff" data-action="confirm-delete-user">${icon("trash")}<span>ยืนยันลบผู้ใช้</span></button></div></div>`;
+      if(state.modal.type==="delete-user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:8px">ลบผู้ใช้ ${userLabel()}</div><p class="hint" style="text-align:left;margin:0 0 16px">ผู้ใช้นี้จะถูกเอาออกจากรายการในเครื่องนี้ แล้วแอปจะซิงก์รายชื่อขึ้นชีตให้อัตโนมัติ</p><button class="primary" style="margin-top:16px;background:#b42318;color:#fff" data-action="confirm-delete-user">${icon("trash")}<span>ยืนยันลบผู้ใช้</span></button></div></div>`;
       return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มอาหารครั้งเดียว</div><input id="manual-name" class="field" data-calorie-name="manual-name" placeholder="ชื่ออาหาร เช่น ผัดไทย"><div class="estimate-box" data-estimate-for="manual-name"><div class="hint" style="text-align:left;margin:0">พิมพ์ชื่อเมนูเพื่อให้ระบบเดาค่าแคลจากฐานข้อมูลในแอป</div></div><div class="field-row"><input id="manual-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-manual">${icon("check")}<span>เพิ่มรายการ</span></button></div></div>`;
     }
     function renderToast(){ return state.notice?`<button class="toast" data-action="clear-notice"><strong>${state.notice}</strong></button>`:""; }
