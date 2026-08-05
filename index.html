@@ -97,6 +97,16 @@
     .toast { position:fixed; z-index:60; left:16px; right:16px; top:calc(14px + env(safe-area-inset-top)); max-width:448px; margin:0 auto; border:0; border-radius:8px; padding:12px 14px; background:var(--text); color:var(--inverse); text-align:center; }
     .toast small { display:block; opacity:.7; margin-top:3px; overflow-wrap:anywhere; }
     .status { min-height:100svh; display:grid; place-items:center; color:var(--muted); }
+    .loader-stack { display:grid; place-items:center; gap:14px; text-align:center; padding:24px; }
+    .spinner { width:32px; height:32px; border-radius:50%; border:2px solid var(--border); border-top-color:var(--text); animation:spin .8s linear infinite; }
+    .loading-overlay { position:fixed; inset:0; z-index:70; display:grid; place-items:center; padding:24px; background:color-mix(in srgb,var(--bg) 78%,transparent); backdrop-filter:blur(8px); }
+    .loading-card { width:min(100%,320px); border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:22px; display:grid; justify-items:center; gap:12px; text-align:center; box-shadow:0 16px 42px rgba(0,0,0,.12); }
+    .loading-title { font-family:"Noto Serif Thai", serif; font-size:19px; line-height:1.35; }
+    .loading-detail { color:var(--muted); font-size:13px; line-height:1.45; }
+    .loading-line { width:100%; height:3px; border-radius:999px; overflow:hidden; background:var(--surface-2); margin-top:2px; }
+    .loading-line::before { content:""; display:block; width:42%; height:100%; border-radius:999px; background:var(--text); animation:slide 1.05s ease-in-out infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes slide { 0% { transform:translateX(-110%); } 50% { transform:translateX(80%); } 100% { transform:translateX(260%); } }
     @media (max-width:360px){ .food-grid{grid-template-columns:1fr;} .title{font-size:25px;} }
   </style>
 </head>
@@ -148,7 +158,7 @@
       {name:"กล้วยทอด",kcal:250,serving:"1 ถุงเล็ก",source:"ประมาณจากส่วนประกอบ",aliases:["กล้วยแขก"]},
       {name:"น้ำอัดลม",kcal:150,serving:"1 กระป๋อง",source:"ประมาณจากฉลากทั่วไป",aliases:["โค้ก","เป๊ปซี่"]}
     ];
-    const state = { loaded:false, bootstrapping:false, theme:localStorage.getItem(LOCAL_PREFIX+"theme")||"light", users:[], currentUserId:"", profile:null, foods:[], tab:"home", viewDate:todayISO(), logs:{}, modal:null, notice:"", syncing:false };
+    const state = { loaded:false, bootstrapping:false, loading:"", loadingDetail:"", theme:localStorage.getItem(LOCAL_PREFIX+"theme")||"light", users:[], currentUserId:"", profile:null, foods:[], tab:"home", viewDate:todayISO(), logs:{}, modal:null, notice:"", syncing:false };
     let autoSyncTimer=null;
     let sheetBatchSupport=true;
 
@@ -234,6 +244,15 @@
         if(kcal){ kcal.value=btn.dataset.kcal; if(btn.dataset.action==="adjust-estimate")kcal.focus(); }
       }));
     }
+    function startLoading(title,detail=""){
+      state.loading=title;
+      state.loadingDetail=detail;
+      render();
+    }
+    function stopLoading(){
+      state.loading="";
+      state.loadingDetail="";
+    }
     function icon(name){ const p={plus:'<path d="M12 5v14M5 12h14"/>',close:'<path d="M18 6 6 18M6 6l12 12"/>',check:'<path d="m20 6-11 11-5-5"/>',left:'<path d="m15 18-6-6 6-6"/>',right:'<path d="m9 18 6-6-6-6"/>',trash:'<path d="M3 6h18M8 6V4h8v2M7 6l1 14h8l1-14"/>',moon:'<path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>',settings:'<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.22.61.8 1 1.45 1H21a2 2 0 0 1 0 4h-.09c-.65 0-1.23.39-1.51 1Z"/>'}; return `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p[name]||""}</svg>`; }
 
     async function init(){
@@ -248,20 +267,27 @@
       setTimeout(async ()=>{
         try{
           state.bootstrapping=true;
+          state.loading="กำลังดึงรายชื่อ";
+          state.loadingDetail="กำลังตรวจข้อมูลผู้ใช้จาก Google Sheets";
           render();
           await restoreUsersFromSheet();
           migrateUsers();
           if(state.currentUserId){
+            state.loading="กำลังโหลดข้อมูลผู้ใช้";
+            state.loadingDetail=`กำลังดึงโปรไฟล์ เมนูประจำ และบันทึกของ ${userLabel()}`;
+            render();
             await syncBootstrap();
             await loadLog(state.viewDate,true);
             if(state.profile&&state.tab==="settings") state.tab="home";
           }
           state.bootstrapping=false;
+          stopLoading();
           render();
           sheetSupportsBatch().catch(()=>{});
           if(state.profile) queueAutoSync();
         }catch{
           state.bootstrapping=false;
+          stopLoading();
           render();
         }
       },0);
@@ -301,6 +327,7 @@
     async function syncUpload(silent=false){
       if(state.syncing)return;
       state.syncing=true;
+      if(!silent) startLoading("กำลังส่งขึ้นชีต",`กำลังบันทึกข้อมูลของ ${userLabel()} ไปยัง Google Sheets`);
       try{
       const items=[
         {key:"users",value:JSON.stringify(state.users)},
@@ -320,18 +347,33 @@
       }
       if(!silent){
         state.notice=`ซิงก์ข้อมูลของ ${userLabel()} แล้ว`;
-        render();
       }
       }finally{
         state.syncing=false;
+        if(!silent) stopLoading();
       }
+      if(!silent) render();
     }
     function queueAutoSync(){
       if(!state.currentUserId)return;
       clearTimeout(autoSyncTimer);
       autoSyncTimer=setTimeout(()=>syncUpload(true).catch(()=>{}),1200);
     }
-    async function syncDownload(){ await syncBootstrap(); const log=await sheetGet(storageKey(`log:${state.viewDate}`)); if(log){ state.logs[state.viewDate]=JSON.parse(log); writeJson(storageKey(`log:${state.viewDate}`),state.logs[state.viewDate]); } state.notice=`ดึงข้อมูลของ ${userLabel()} แล้ว`; render(); }
+    async function syncDownload(){
+      startLoading("กำลังดึงจากชีต",`กำลังโหลดข้อมูลของ ${userLabel()} จาก Google Sheets`);
+      try{
+        await syncBootstrap();
+        const log=await sheetGet(storageKey(`log:${state.viewDate}`));
+        if(log){
+          state.logs[state.viewDate]=JSON.parse(log);
+          writeJson(storageKey(`log:${state.viewDate}`),state.logs[state.viewDate]);
+        }
+        state.notice=`ดึงข้อมูลของ ${userLabel()} แล้ว`;
+      }finally{
+        stopLoading();
+        render();
+      }
+    }
     async function loadLog(iso,force=false){ if(state.logs[iso]&&!force)return; state.logs[iso]=readJson(storageKey(`log:${iso}`),[]); }
     function persistProfile(p){ state.profile=p; writeJson(storageKey("profile"),p); state.tab="home"; render(); queueAutoSync(); }
     function persistLog(iso,entries){ state.logs[iso]=entries; writeJson(storageKey(`log:${iso}`),entries); render(); queueAutoSync(); }
@@ -392,15 +434,16 @@
       queueAutoSync();
     }
 
-    function render(){ const app=document.getElementById("app"); document.querySelector('meta[name="theme-color"]').setAttribute("content",state.theme==="dark"?"#0a0a0a":"#ffffff"); if(!state.loaded){ app.className="status"; app.innerHTML='<span class="overline">loading</span>'; return; } app.className=""; app.innerHTML=!state.currentUserId?renderUserSelect():((!state.profile||state.tab==="settings")?renderOnboard():renderHome()); bind(); }
-    function renderUserSelect(){ return `<main class="onboard"><div class="overline">Calorie Tracker</div><div class="title">เลือกผู้ใช้</div><p class="onboard-copy">${state.bootstrapping?"กำลังดึงรายชื่อจาก Google Sheets...":"เลือกชื่อที่มีอยู่เพื่อโหลดโปรไฟล์ เมนูที่กินบ่อย และบันทึกอาหารจากชีต หรือสร้างผู้ใช้ใหม่"}</p>${state.users.length?`<div class="activity">${state.users.map(u=>`<button class="select-btn" data-action="switch-user" data-id="${u.id}">${u.name}</button>`).join("")}</div>`:`<div class="entry-empty">ยังไม่พบรายชื่อผู้ใช้ในเครื่องนี้</div>`}<button class="primary" style="margin-top:16px" data-action="add-user">${icon("plus")}<span>เพิ่มผู้ใช้ใหม่</span></button><button class="secondary" data-action="refresh-users">ดึงรายชื่อจากชีตอีกครั้ง</button>${renderModal()}${renderToast()}</main>`; }
+    function render(){ const app=document.getElementById("app"); document.querySelector('meta[name="theme-color"]').setAttribute("content",state.theme==="dark"?"#0a0a0a":"#ffffff"); if(!state.loaded){ app.className="status"; app.innerHTML='<div class="loader-stack"><div class="spinner"></div><span class="overline">loading</span></div>'; return; } app.className=""; const view=!state.currentUserId?renderUserSelect():((!state.profile||state.tab==="settings")?renderOnboard():renderHome()); app.innerHTML=view+renderLoadingOverlay(); bind(); }
+    function renderLoadingOverlay(){ return state.loading?`<div class="loading-overlay" role="status" aria-live="polite"><div class="loading-card"><div class="spinner"></div><div class="loading-title">${state.loading}</div>${state.loadingDetail?`<div class="loading-detail">${state.loadingDetail}</div>`:""}<div class="loading-line"></div></div></div>`:""; }
+    function renderUserSelect(){ const busy=state.bootstrapping||!!state.loading; return `<main class="onboard"><div class="overline">Calorie Tracker</div><div class="title">เลือกผู้ใช้</div><p class="onboard-copy">${state.bootstrapping?"กำลังดึงรายชื่อจาก Google Sheets...":"เลือกชื่อที่มีอยู่เพื่อโหลดโปรไฟล์ เมนูที่กินบ่อย และบันทึกอาหารจากชีต หรือสร้างผู้ใช้ใหม่"}</p>${state.users.length?`<div class="activity">${state.users.map(u=>`<button class="select-btn" data-action="switch-user" data-id="${u.id}" ${busy?"disabled":""}>${u.name}</button>`).join("")}</div>`:`<div class="entry-empty">ยังไม่พบรายชื่อผู้ใช้ในเครื่องนี้</div>`}<button class="primary" style="margin-top:16px" data-action="add-user" ${busy?"disabled":""}>${icon("plus")}<span>เพิ่มผู้ใช้ใหม่</span></button><button class="secondary" data-action="refresh-users-loading" ${busy?"disabled":""}>${busy?"กำลังดึงรายชื่อ...":"ดึงรายชื่อจากชีตอีกครั้ง"}</button>${renderModal()}${renderToast()}</main>`; }
     function renderHome(){ const {target}=metrics(); const entries=state.logs[state.viewDate]||[]; const eaten=entries.reduce((s,e)=>s+Number(e.kcal),0); const pct=target?Math.min(100,Math.round(eaten/target*100)):0; const remaining=target-eaten; return `<main class="screen"><header class="masthead"><div><div class="overline">${userLabel()}</div><div class="title">${state.viewDate===todayISO()?"วันนี้":thaiDate(state.viewDate)}</div></div><div class="icon-row"><button class="icon-btn" data-action="theme" aria-label="สลับธีม">${icon(state.theme==="light"?"moon":"sun")}</button><button class="icon-btn" data-action="settings" aria-label="ตั้งค่า">${icon("settings")}</button></div></header>${renderUserSwitcher()}${state.tab==="history"?renderDateSwitcher():""}<section class="gauge-wrap">${renderGauge(pct,eaten,target)}<div class="hint">${remaining>0?`อีก <span class="mono" style="color:var(--text)">${remaining}</span> แคล ถึงเป้าวันนี้`:`<span style="color:var(--text)">ถึงเป้าแล้ววันนี้</span>`}</div></section>${state.tab==="home"?renderFoodList():""}${renderEntries(entries)}${renderSync()}${renderNav()}${renderModal()}${renderToast()}</main>`; }
     function renderGauge(pct,eaten,target){ const r=78,cc=Math.PI*2*r,offset=cc-pct/100*cc; return `<div class="gauge"><svg width="192" height="192" viewBox="0 0 192 192"><circle cx="96" cy="96" r="${r}" fill="none" stroke="var(--border)" stroke-width="1.5"></circle><circle cx="96" cy="96" r="${r}" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="${cc}" stroke-dashoffset="${offset}" transform="rotate(-90 96 96)"></circle></svg><div class="gauge-center"><div class="gauge-number">${eaten}</div><div class="small-mono">/ ${target||"-"} kcal</div></div></div>`; }
     function renderDateSwitcher(){ return `<div class="date-switcher"><button class="icon-btn" data-action="prev-date">${icon("left")}</button><div class="date-label">${thaiDate(state.viewDate)}</div><button class="icon-btn" data-action="next-date" ${state.viewDate>=todayISO()?"disabled":""}>${icon("right")}</button></div>`; }
     function renderUserSwitcher(){ return `<div class="user-strip">${state.users.map(u=>`<button class="user-pill ${u.id===state.currentUserId?"active":""}" data-action="switch-user" data-id="${u.id}">${u.name}</button>`).join("")}<button class="user-pill" data-action="add-user">+ เพิ่มผู้ใช้</button>${state.users.length>1?`<button class="user-pill danger-btn" data-action="ask-delete-user">ลบผู้ใช้นี้</button>`:""}</div>`; }
     function renderFoodList(){ const foods=state.foods||[]; return `<section class="section"><div class="section-head overline">เมนูที่กินบ่อย · ${userLabel()}</div>${foods.length?`<div class="food-grid">${foods.map(f=>`<div class="food-card"><button class="food-card-main" data-action="eat-food" data-id="${f.id}"><span class="food-name">${f.name}</span><span class="food-kcal">${f.kcal} kcal</span></button><div class="food-card-actions"><button class="icon-btn" data-action="delete-food" data-id="${f.id}" aria-label="ลบเมนู">${icon("trash")}</button></div></div>`).join("")}</div>`:`<div class="entry-empty">ยังไม่มีเมนูที่กินบ่อยของผู้ใช้นี้</div>`}<div class="food-tools"><button class="primary" data-action="food">${icon("plus")}<span>เพิ่มเมนูที่กินบ่อย</span></button><button class="small-btn" data-action="manual">เพิ่มอาหารครั้งเดียว</button></div></section>`; }
     function renderEntries(entries){ return `<section class="section"><div class="section-head overline">รายการ (${entries.length})</div>${entries.length?`<div>${entries.map(e=>`<div class="entry"><div><div class="entry-name">${e.name}</div><div class="entry-meta">${e.time} · ${e.kcal} kcal</div></div>${state.viewDate===todayISO()?`<button class="icon-btn" data-action="delete" data-id="${e.id}">${icon("trash")}</button>`:""}</div>`).join("")}</div>`:`<div class="entry-empty">ยังไม่มีรายการในวันนี้</div>`}</section>`; }
-    function renderSync(){ return `<section class="section"><div class="sync-panel"><div class="overline">Sync · ${userLabel()}</div><p>ปุ่มนี้ซิงก์เฉพาะผู้ใช้ที่เลือกอยู่ รวมถึงโปรไฟล์ เมนูที่กินบ่อย และรายการวันนี้ โดยใช้ key แยก เช่น <span class="mono">user:${state.currentUserId}:foods</span></p><div class="sync-actions"><button class="small-btn" data-action="sync-up">ส่งขึ้นชีต</button><button class="small-btn" data-action="sync-down">ดึงจากชีต</button></div></div></section>`; }
+    function renderSync(){ const busy=state.syncing||!!state.loading; return `<section class="section"><div class="sync-panel"><div class="overline">Sync · ${userLabel()}</div><p>ปุ่มนี้ซิงก์เฉพาะผู้ใช้ที่เลือกอยู่ รวมถึงโปรไฟล์ เมนูที่กินบ่อย และรายการวันนี้ โดยใช้ key แยก เช่น <span class="mono">user:${state.currentUserId}:foods</span></p><div class="sync-actions"><button class="small-btn" data-action="sync-up" ${busy?"disabled":""}>${state.syncing?"กำลังส่ง...":"ส่งขึ้นชีต"}</button><button class="small-btn" data-action="sync-down" ${busy?"disabled":""}>ดึงจากชีต</button></div></div></section>`; }
     function renderNav(){ return `<nav class="bottom-nav"><div class="nav-inner"><button class="nav-btn ${state.tab==="home"?"active":""}" data-action="tab" data-tab="home">วันนี้</button><button class="nav-btn ${state.tab==="history"?"active":""}" data-action="tab" data-tab="history">ประวัติ</button></div></nav>`; }
     function renderModal(){
       if(!state.modal)return"";
@@ -418,6 +461,25 @@
     function renderPreview(p){ if(!Number(p.age)||!Number(p.height)||!Number(p.weight))return'<div style="height:20px"></div>'; const m=metrics(p); return `<div class="panel preview"><div class="preview-line"><span style="color:var(--muted)">BMI ปัจจุบัน</span><span class="mono">${m.bmi.toFixed(1)} · ${bmiCategory(m.bmi)}</span></div><div class="preview-line"><span style="color:var(--muted)">เป้าแคลต่อวัน</span><strong class="mono">${m.target} kcal</strong></div></div>`; }
     function refreshPreview(){ const panel=document.querySelector(".preview"); const html=renderPreview(currentDraft()); if(panel)panel.outerHTML=html; }
     function bind(){ document.querySelectorAll("[data-action]").forEach(el=>el.addEventListener("click",async ev=>{ const a=el.dataset.action; try{ if(a==="theme")setTheme(state.theme==="light"?"dark":"light"); if(a==="settings"){state.tab="settings";render();} if(a==="switch-user")await switchUser(el.dataset.id); if(a==="add-user"){state.modal={type:"user"};render();setTimeout(()=>document.getElementById("user-name")?.focus(),0);} if(a==="confirm-user")await createUser(document.getElementById("user-name")?.value||""); if(a==="ask-delete-user"){state.modal={type:"delete-user"};render();} if(a==="confirm-delete-user")await deleteCurrentUser(); if(a==="prev-date")openDate(addDaysISO(state.viewDate,-1)); if(a==="next-date"&&state.viewDate<todayISO())openDate(addDaysISO(state.viewDate,1)); if(a==="eat-food"){const f=state.foods.find(item=>item.id===el.dataset.id); if(f)addEntry(f.name,f.kcal);} if(a==="delete-food")deleteFood(el.dataset.id); if(a==="food"){state.modal={type:"food"}; render(); setTimeout(()=>document.getElementById("food-name")?.focus(),0);} if(a==="manual"){state.modal={type:"manual"}; render(); setTimeout(()=>document.getElementById("manual-name")?.focus(),0);} if(a==="close-modal"&&(ev.target===el||el.classList.contains("icon-btn"))){state.modal=null;render();} if(a==="confirm-quick"){const kcal=Number(document.getElementById("modal-kcal").value); if(kcal>0)addEntry(state.modal.name,kcal);} if(a==="confirm-food")createFood(document.getElementById("food-name")?.value||"",document.getElementById("food-kcal")?.value||0); if(a==="confirm-manual"){const name=document.getElementById("manual-name").value.trim(); const kcal=Number(document.getElementById("manual-kcal").value); if(name&&kcal>0)addEntry(name,kcal);} if(a==="delete")deleteEntry(el.dataset.id); if(a==="tab"){state.tab=el.dataset.tab; if(state.tab==="home")openDate(todayISO()); else render();} if(a==="save-profile"){const p=currentDraft(); if(p.age>0&&p.height>0&&p.weight>0)persistProfile(p);} if(a==="cancel-settings"){state.tab="home";render();} if(a==="sync-up"){state.notice="กำลังส่งขึ้นชีต...";render(); await syncUpload();} if(a==="sync-down"){state.notice="กำลังดึงจากชีต...";render(); await syncDownload();} if(a==="refresh-users"){state.notice="กำลังดึงรายชื่อจากชีต...";state.bootstrapping=true;render(); await restoreUsersFromSheet(); migrateUsers(); state.bootstrapping=false; state.notice="ดึงรายชื่อแล้ว";render();} if(a==="clear-notice"){state.notice="";render();} }catch(err){state.bootstrapping=false;state.notice="ซิงก์ไม่สำเร็จ: "+(err.name==="AbortError"?"Apps Script ไม่ตอบภายในเวลา":(err.message||err));render();} })); document.querySelectorAll("[data-profile]").forEach(el=>el.addEventListener("click",()=>{ const g=el.dataset.profile; document.querySelectorAll(`[data-profile="${g}"]`).forEach(i=>i.classList.remove("active")); el.classList.add("active"); refreshPreview(); })); document.querySelectorAll("[data-profile-input]").forEach(el=>el.addEventListener("input",refreshPreview)); document.querySelectorAll("[data-calorie-name]").forEach(el=>el.addEventListener("input",()=>renderEstimate(el.id))); }
+    document.addEventListener("click",async ev=>{
+      const el=ev.target.closest('[data-action="refresh-users-loading"]');
+      if(!el||state.loading)return;
+      ev.preventDefault();
+      state.notice="กำลังดึงรายชื่อจากชีต...";
+      state.bootstrapping=true;
+      startLoading("กำลังดึงรายชื่อ","กำลังอัปเดตรายชื่อผู้ใช้จาก Google Sheets");
+      try{
+        await restoreUsersFromSheet();
+        migrateUsers();
+        state.notice="ดึงรายชื่อแล้ว";
+      }catch(err){
+        state.notice="ซิงก์ไม่สำเร็จ: "+(err.name==="AbortError"?"Apps Script ไม่ตอบภายในเวลา":(err.message||err));
+      }finally{
+        state.bootstrapping=false;
+        stopLoading();
+        render();
+      }
+    });
     if("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
     init();
   </script>
