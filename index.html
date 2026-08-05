@@ -150,6 +150,7 @@
     ];
     const state = { loaded:false, theme:localStorage.getItem(LOCAL_PREFIX+"theme")||"light", users:[], currentUserId:"", profile:null, foods:[], tab:"home", viewDate:todayISO(), logs:{}, modal:null, notice:"", syncing:false };
     let autoSyncTimer=null;
+    let sheetBatchSupport=null;
 
     function todayISO(){ const d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
     function addDaysISO(iso,n){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
@@ -251,6 +252,17 @@
       const data=await res.json();
       if(!data.ok)throw new Error(data.error||"unknown error");
     }
+    async function sheetSupportsBatch(){
+      if(sheetBatchSupport!==null)return sheetBatchSupport;
+      try{
+        const res=await fetchTimeout(`${SHEET_API}?cap=batch`,{cache:"no-store"},3000);
+        const data=await res.json();
+        sheetBatchSupport=!!(data&&data.ok&&data.batch);
+      }catch{
+        sheetBatchSupport=false;
+      }
+      return sheetBatchSupport;
+    }
     async function syncBootstrap(){
       try{
         const remoteUsers=await sheetGet("users");
@@ -273,10 +285,14 @@
         {key:storageKey("foods"),value:JSON.stringify(state.foods)},
         {key:storageKey(`log:${state.viewDate}`),value:JSON.stringify(state.logs[state.viewDate]||[])}
       ];
-      try{
-        await sheetSetMany(items);
-      }catch(err){
-        if(!/missing key|unknown action/i.test(err.message||""))throw err;
+      if(await sheetSupportsBatch()){
+        try{
+          await sheetSetMany(items);
+        }catch(err){
+          sheetBatchSupport=false;
+          await Promise.all(items.map(item=>sheetSet(item.key,item.value)));
+        }
+      }else{
         await Promise.all(items.map(item=>sheetSet(item.key,item.value)));
       }
       if(!silent){
