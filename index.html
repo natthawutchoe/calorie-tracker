@@ -47,6 +47,10 @@
     .food-card { border:1px solid var(--border); border-radius:8px; padding:12px; display:grid; gap:10px; }
     .food-card-main { border:0; background:transparent; color:var(--text); min-height:56px; padding:0; text-align:left; display:flex; flex-direction:column; justify-content:space-between; gap:8px; }
     .food-card-actions { display:flex; justify-content:flex-end; }
+    .estimate-box { margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+    .estimate-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .estimate-title { font-size:14px; line-height:1.35; }
+    .estimate-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
     .food-name { font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
     .food-kcal,.entry-meta,.small-mono { color:var(--muted); font-size:12px; font-family:"Space Mono", monospace; }
     .food-tools { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; }
@@ -108,6 +112,42 @@
       {key:"moderate",label:"ออกกำลังกายปานกลาง 3-5 วัน/สัปดาห์",mult:1.55},
       {key:"active",label:"ออกกำลังกายหนัก 6-7 วัน/สัปดาห์",mult:1.725}
     ];
+    const CALORIE_DB = [
+      {name:"ข้าวมันไก่",kcal:590,serving:"1 จาน",source:"กรมอนามัย 558-619 kcal",aliases:["ข้าวมันไก่ต้ม","มันไก่"]},
+      {name:"ข้าวมันไก่ไม่หนัง",kcal:520,serving:"1 จาน",source:"ประมาณจากกรมอนามัย",aliases:["ข้าวมันไก่ไม่เอาหนัง","ไก่ไม่หนัง"]},
+      {name:"ข้าวกะเพราหมูสับไข่ดาว",kcal:630,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["กระเพราหมูไข่ดาว","กะเพราหมูไข่ดาว","ผัดกะเพราไข่ดาว"]},
+      {name:"ข้าวกะเพราไก่",kcal:520,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["กระเพราไก่","กะเพราไก่"]},
+      {name:"ข้าวขาหมู",kcal:690,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ขาหมู"]},
+      {name:"ข้าวหมูแดง",kcal:560,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["หมูแดง"]},
+      {name:"ข้าวหน้าเป็ด",kcal:550,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["หน้าเป็ด"]},
+      {name:"ข้าวผัดหมู",kcal:560,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ข้าวผัด"]},
+      {name:"ข้าวผัดกุ้ง",kcal:540,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ข้าวผัดทะเล"]},
+      {name:"ข้าวไข่เจียว",kcal:450,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ไข่เจียวราดข้าว"]},
+      {name:"ข้าวต้มหมูสับ",kcal:250,serving:"1 ชาม",source:"ประมาณจาก Thai FCD",aliases:["ข้าวต้มหมู","โจ๊กหมู"]},
+      {name:"ผัดไทยใส่ไข่",kcal:500,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ผัดไทย","ผัดไทยกุ้ง"]},
+      {name:"ผัดซีอิ๊วหมู",kcal:600,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ผัดซีอิ๊ว","ผัดซีอิ้ว"]},
+      {name:"ราดหน้าเส้นใหญ่หมู",kcal:430,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ราดหน้า","ราดหน้าหมู"]},
+      {name:"ก๋วยเตี๋ยวหมูน้ำใส",kcal:350,serving:"1 ชาม",source:"ประมาณจาก Thai FCD",aliases:["ก๋วยเตี๋ยวหมู","ก๋วยเตี๋ยวน้ำใส"]},
+      {name:"ก๋วยเตี๋ยวเรือ",kcal:380,serving:"1 ชาม",source:"ประมาณจาก Thai FCD",aliases:["เตี๋ยวเรือ"]},
+      {name:"เย็นตาโฟ",kcal:420,serving:"1 ชาม",source:"ประมาณจาก Thai FCD",aliases:["ก๋วยเตี๋ยวเย็นตาโฟ"]},
+      {name:"สุกี้น้ำไก่",kcal:330,serving:"1 ชาม",source:"ประมาณจาก Thai FCD",aliases:["สุกี้น้ำ","สุกี้ไก่"]},
+      {name:"สุกี้แห้งไก่",kcal:430,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["สุกี้แห้ง"]},
+      {name:"ขนมจีนน้ำยา",kcal:360,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ขนมจีน"]},
+      {name:"แกงเขียวหวานไก่กับข้าว",kcal:550,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["แกงเขียวหวานไก่","เขียวหวานไก่"]},
+      {name:"ต้มยำกุ้งกับข้าว",kcal:450,serving:"1 จาน",source:"ประมาณจาก Thai FCD",aliases:["ต้มยำกุ้ง","ต้มยำ"]},
+      {name:"ส้มตำไทย",kcal:185,serving:"1 จาน",source:"ประมาณจากส่วนประกอบ",aliases:["ส้มตำ","ตำไทย"]},
+      {name:"ลาบไก่",kcal:290,serving:"1 จาน",source:"ประมาณจากส่วนประกอบ",aliases:["ลาบ"]},
+      {name:"ไก่ย่าง",kcal:260,serving:"1 ชิ้น",source:"ประมาณจาก Thai FCD",aliases:["ไก่ย่างน่องสะโพก"]},
+      {name:"ข้าวเหนียว",kcal:160,serving:"1 ห่อเล็ก",source:"Thai FCD/กรมอนามัย",aliases:["ข้าวเหนียวหนึ่งห่อ"]},
+      {name:"ข้าวสวย",kcal:160,serving:"2 ทัพพี",source:"กรมอนามัย",aliases:["ข้าวเปล่า","ข้าว"]},
+      {name:"ไข่ต้ม",kcal:80,serving:"1 ฟอง",source:"Thai FCD",aliases:["ไข่"]},
+      {name:"ไข่ดาว",kcal:165,serving:"1 ฟอง",source:"ประมาณจาก Thai FCD",aliases:["ไข่ทอด"]},
+      {name:"กล้วยน้ำว้า",kcal:100,serving:"1 ผล",source:"Thai FCD",aliases:["กล้วย"]},
+      {name:"นมถั่วเหลืองหวานน้อย",kcal:120,serving:"1 แก้ว",source:"ประมาณจากฉลากทั่วไป",aliases:["นมถั่วเหลือง","น้ำเต้าหู้"]},
+      {name:"ข้าวเหนียวมะม่วง",kcal:450,serving:"1 ชุด",source:"ประมาณจากส่วนประกอบ",aliases:["ข้าวเหนียวมูนมะม่วง"]},
+      {name:"กล้วยทอด",kcal:250,serving:"1 ถุงเล็ก",source:"ประมาณจากส่วนประกอบ",aliases:["กล้วยแขก"]},
+      {name:"น้ำอัดลม",kcal:150,serving:"1 กระป๋อง",source:"ประมาณจากฉลากทั่วไป",aliases:["โค้ก","เป๊ปซี่"]}
+    ];
     const state = { loaded:false, theme:localStorage.getItem(LOCAL_PREFIX+"theme")||"light", users:[], currentUserId:"", profile:null, foods:[], tab:"home", viewDate:todayISO(), logs:{}, modal:null, notice:"", syncing:false };
     let autoSyncTimer=null;
 
@@ -142,6 +182,39 @@
     function bmiCategory(bmi){ if(bmi<18.5)return"น้ำหนักน้อย"; if(bmi<23)return"ปกติ"; if(bmi<25)return"ท้วม"; if(bmi<30)return"อ้วน"; return"อ้วนมาก"; }
     function metrics(p=state.profile){ if(!p)return{target:0,bmi:0}; const bmr=p.gender==="male"?10*p.weight+6.25*p.height-5*p.age+5:10*p.weight+6.25*p.height-5*p.age-161; const mult=(ACTIVITY.find(a=>a.key===p.activity)||ACTIVITY[0]).mult; return{target:Math.round(bmr*mult+Number(p.surplus||500)),bmi:p.weight/Math.pow(p.height/100,2)}; }
     function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+    function cleanText(text){ return String(text||"").toLowerCase().replace(/\s+/g,"").replace(/เผ็ด|ไม่เผ็ด|พิเศษ|ธรรมดา|ใส่ถุง/g,""); }
+    function findCalorieEstimate(text){
+      const q=cleanText(text);
+      if(q.length<2)return null;
+      let best=null;
+      CALORIE_DB.forEach(item=>{
+        const names=[item.name,...(item.aliases||[])].map(cleanText);
+        let score=0;
+        names.forEach(name=>{
+          if(q===name)score=Math.max(score,100);
+          else if(name.includes(q)||q.includes(name))score=Math.max(score,80);
+          else if(q.length>=4&&name.includes(q.slice(0,4)))score=Math.max(score,45);
+        });
+        if(!best||score>best.score)best={...item,score};
+      });
+      return best&&best.score>=45?best:null;
+    }
+    function renderEstimate(id){
+      const input=document.getElementById(id);
+      const box=document.querySelector(`[data-estimate-for="${id}"]`);
+      if(!input||!box)return;
+      const estimate=findCalorieEstimate(input.value);
+      if(!estimate){ box.innerHTML=`<div class="hint" style="text-align:left;margin:0">พิมพ์ชื่อเมนูเพื่อให้ระบบเดาค่าแคลจากฐานข้อมูลในแอป</div>`; return; }
+      box.innerHTML=`<div class="estimate-top"><div><div class="estimate-title">${estimate.name}</div><div class="food-kcal">${estimate.serving} · ${estimate.source}</div></div><strong class="mono">${estimate.kcal} kcal</strong></div><div class="estimate-actions"><button class="small-btn" data-action="use-estimate" data-target="${id}" data-kcal="${estimate.kcal}">ใช้ค่านี้</button><button class="small-btn" data-action="adjust-estimate" data-target="${id}" data-kcal="${estimate.kcal}">ปรับเอง</button></div>`;
+      bindEstimateButtons(box);
+    }
+    function bindEstimateButtons(root=document){
+      root.querySelectorAll("[data-action='use-estimate'],[data-action='adjust-estimate']").forEach(btn=>btn.addEventListener("click",()=>{
+        const target=btn.dataset.target==="food-name"?"food-kcal":"manual-kcal";
+        const kcal=document.getElementById(target);
+        if(kcal){ kcal.value=btn.dataset.kcal; if(btn.dataset.action==="adjust-estimate")kcal.focus(); }
+      }));
+    }
     function icon(name){ const p={plus:'<path d="M12 5v14M5 12h14"/>',close:'<path d="M18 6 6 18M6 6l12 12"/>',check:'<path d="m20 6-11 11-5-5"/>',left:'<path d="m15 18-6-6 6-6"/>',right:'<path d="m9 18 6-6-6-6"/>',trash:'<path d="M3 6h18M8 6V4h8v2M7 6l1 14h8l1-14"/>',moon:'<path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>',settings:'<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.22.61.8 1 1.45 1H21a2 2 0 0 1 0 4h-.09c-.65 0-1.23.39-1.51 1Z"/>'}; return `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p[name]||""}</svg>`; }
 
     async function init(){
@@ -154,7 +227,7 @@
     }
     async function fetchTimeout(url,options={},ms=3500){ const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),ms); try{return await fetch(url,{...options,signal:ctrl.signal});} finally{clearTimeout(timer);} }
     async function sheetGet(key){ const res=await fetchTimeout(`${SHEET_API}?key=${encodeURIComponent(key)}`,{cache:"no-store"}); if(!res.ok)throw new Error(`HTTP ${res.status}`); const data=await res.json(); if(!data.ok)throw new Error(data.error||"unknown error"); return data.value; }
-    async function sheetSet(key,value){ const res=await fetchTimeout(SHEET_API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key,value})},5000); if(!res.ok)throw new Error(`HTTP ${res.status}`); const data=await res.json(); if(!data.ok)throw new Error(data.error||"unknown error"); }
+    async function sheetSet(key,value){ const res=await fetchTimeout(SHEET_API,{method:"POST",body:JSON.stringify({key,value})},15000); if(!res.ok)throw new Error(`HTTP ${res.status}`); const data=await res.json(); if(!data.ok)throw new Error(data.error||"unknown error"); }
     async function syncBootstrap(){
       try{
         const remoteUsers=await sheetGet("users");
@@ -234,10 +307,10 @@
       if(!state.modal)return"";
       const close=`<div class="modal-top"><button class="icon-btn" data-action="close-modal">${icon("close")}</button></div>`;
       if(state.modal.type==="quick")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;line-height:1.35">${state.modal.name}</div><div class="hint" style="text-align:left;margin:4px 0 16px">ปรับแคลได้ถ้าปริมาณไม่ตรง</div><div class="field-row"><input id="modal-kcal" class="field mono" type="number" inputmode="numeric" value="${state.modal.kcal}"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-quick">${icon("check")}<span>เพิ่มรายการ</span></button></div></div>`;
-      if(state.modal.type==="food")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มเมนูที่กินบ่อย</div><input id="food-name" class="field" placeholder="ชื่ออาหาร"><div class="field-row"><input id="food-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-food">${icon("check")}<span>บันทึกเมนู</span></button></div></div>`;
+      if(state.modal.type==="food")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มเมนูที่กินบ่อย</div><input id="food-name" class="field" data-calorie-name="food-name" placeholder="ชื่ออาหาร เช่น ข้าวมันไก่"><div class="estimate-box" data-estimate-for="food-name"><div class="hint" style="text-align:left;margin:0">พิมพ์ชื่อเมนูเพื่อให้ระบบเดาค่าแคลจากฐานข้อมูลในแอป</div></div><div class="field-row"><input id="food-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-food">${icon("check")}<span>บันทึกเมนู</span></button></div></div>`;
       if(state.modal.type==="user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มผู้ใช้งาน</div><input id="user-name" class="field" placeholder="ชื่อผู้ใช้ เช่น คุณพ่อ"><button class="primary" style="margin-top:16px" data-action="confirm-user">${icon("check")}<span>สร้างผู้ใช้</span></button></div></div>`;
       if(state.modal.type==="delete-user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:8px">ลบผู้ใช้ ${userLabel()}</div><p class="hint" style="text-align:left;margin:0 0 16px">ผู้ใช้นี้จะถูกเอาออกจากรายการในเครื่องนี้ ข้อมูลในชีตจะอัปเดตเมื่อกดส่งขึ้นชีต</p><button class="primary" style="margin-top:16px;background:#b42318;color:#fff" data-action="confirm-delete-user">${icon("trash")}<span>ยืนยันลบผู้ใช้</span></button></div></div>`;
-      return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มอาหารครั้งเดียว</div><input id="manual-name" class="field" placeholder="ชื่ออาหาร"><div class="field-row"><input id="manual-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-manual">${icon("check")}<span>เพิ่มรายการ</span></button></div></div>`;
+      return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มอาหารครั้งเดียว</div><input id="manual-name" class="field" data-calorie-name="manual-name" placeholder="ชื่ออาหาร เช่น ผัดไทย"><div class="estimate-box" data-estimate-for="manual-name"><div class="hint" style="text-align:left;margin:0">พิมพ์ชื่อเมนูเพื่อให้ระบบเดาค่าแคลจากฐานข้อมูลในแอป</div></div><div class="field-row"><input id="manual-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-manual">${icon("check")}<span>เพิ่มรายการ</span></button></div></div>`;
     }
     function renderToast(){ return state.notice?`<button class="toast" data-action="clear-notice"><strong>${state.notice}</strong></button>`:""; }
     function renderOnboard(){ const p=state.profile||{gender:"male",age:"",height:"",weight:"",activity:"sedentary",surplus:500}; return `<main class="onboard"><div class="overline">${userLabel()}</div><div class="title">โปรไฟล์</div><p class="onboard-copy">ใช้คำนวณแคลที่ควรกินต่อวันเพื่อเพิ่มน้ำหนักอย่างเหมาะสม จาก BMI, BMR และระดับกิจกรรม</p>${renderUserSwitcher()}<div class="label">เพศ</div><div class="seg"><button class="select-btn ${p.gender==="male"?"active":""}" data-profile="gender" data-value="male">ชาย</button><button class="select-btn ${p.gender==="female"?"active":""}" data-profile="gender" data-value="female">หญิง</button></div>${field("age","อายุ (ปี)",p.age,"เช่น 21")}${field("height","ส่วนสูง (ซม.)",p.height,"เช่น 170")}${field("weight","น้ำหนักปัจจุบัน (กก.)",p.weight,"เช่น 55")}<div class="label">กิจกรรมต่อวัน</div><div class="activity">${ACTIVITY.map(a=>`<button class="select-btn ${p.activity===a.key?"active":""}" data-profile="activity" data-value="${a.key}">${a.label}</button>`).join("")}</div><div class="label">แคลส่วนเกินต่อวัน</div><div class="seg three">${[300,500,750].map(s=>`<button class="select-btn mono ${Number(p.surplus)===s?"active":""}" data-profile="surplus" data-value="${s}">+${s}</button>`).join("")}</div><div class="hint" style="text-align:left;margin:8px 0 0">+500 แคล/วัน ≈ น้ำหนักขึ้นราว 0.5 กก./สัปดาห์โดยประมาณ</div>${renderPreview(p)}<button class="primary" data-action="save-profile">บันทึกโปรไฟล์</button>${state.profile?`<button class="secondary" data-action="cancel-settings">ยกเลิก</button>`:""}${renderModal()}${renderToast()}</main>`; }
@@ -245,7 +318,7 @@
     function currentDraft(){ const existing=state.profile||{}; return { gender:document.querySelector('[data-profile="gender"].active')?.dataset.value||existing.gender||"male", age:Number(document.querySelector('[data-profile-input="age"]')?.value||existing.age||0), height:Number(document.querySelector('[data-profile-input="height"]')?.value||existing.height||0), weight:Number(document.querySelector('[data-profile-input="weight"]')?.value||existing.weight||0), activity:document.querySelector('[data-profile="activity"].active')?.dataset.value||existing.activity||"sedentary", surplus:Number(document.querySelector('[data-profile="surplus"].active')?.dataset.value||existing.surplus||500) }; }
     function renderPreview(p){ if(!Number(p.age)||!Number(p.height)||!Number(p.weight))return'<div style="height:20px"></div>'; const m=metrics(p); return `<div class="panel preview"><div class="preview-line"><span style="color:var(--muted)">BMI ปัจจุบัน</span><span class="mono">${m.bmi.toFixed(1)} · ${bmiCategory(m.bmi)}</span></div><div class="preview-line"><span style="color:var(--muted)">เป้าแคลต่อวัน</span><strong class="mono">${m.target} kcal</strong></div></div>`; }
     function refreshPreview(){ const panel=document.querySelector(".preview"); const html=renderPreview(currentDraft()); if(panel)panel.outerHTML=html; }
-    function bind(){ document.querySelectorAll("[data-action]").forEach(el=>el.addEventListener("click",async ev=>{ const a=el.dataset.action; try{ if(a==="theme")setTheme(state.theme==="light"?"dark":"light"); if(a==="settings"){state.tab="settings";render();} if(a==="switch-user")await switchUser(el.dataset.id); if(a==="add-user"){state.modal={type:"user"};render();setTimeout(()=>document.getElementById("user-name")?.focus(),0);} if(a==="confirm-user")await createUser(document.getElementById("user-name")?.value||""); if(a==="ask-delete-user"){state.modal={type:"delete-user"};render();} if(a==="confirm-delete-user")await deleteCurrentUser(); if(a==="prev-date")openDate(addDaysISO(state.viewDate,-1)); if(a==="next-date"&&state.viewDate<todayISO())openDate(addDaysISO(state.viewDate,1)); if(a==="eat-food"){const f=state.foods.find(item=>item.id===el.dataset.id); if(f)addEntry(f.name,f.kcal);} if(a==="delete-food")deleteFood(el.dataset.id); if(a==="food"){state.modal={type:"food"}; render(); setTimeout(()=>document.getElementById("food-name")?.focus(),0);} if(a==="manual"){state.modal={type:"manual"}; render(); setTimeout(()=>document.getElementById("manual-name")?.focus(),0);} if(a==="close-modal"&&(ev.target===el||el.classList.contains("icon-btn"))){state.modal=null;render();} if(a==="confirm-quick"){const kcal=Number(document.getElementById("modal-kcal").value); if(kcal>0)addEntry(state.modal.name,kcal);} if(a==="confirm-food")createFood(document.getElementById("food-name")?.value||"",document.getElementById("food-kcal")?.value||0); if(a==="confirm-manual"){const name=document.getElementById("manual-name").value.trim(); const kcal=Number(document.getElementById("manual-kcal").value); if(name&&kcal>0)addEntry(name,kcal);} if(a==="delete")deleteEntry(el.dataset.id); if(a==="tab"){state.tab=el.dataset.tab; if(state.tab==="home")openDate(todayISO()); else render();} if(a==="save-profile"){const p=currentDraft(); if(p.age>0&&p.height>0&&p.weight>0)persistProfile(p);} if(a==="cancel-settings"){state.tab="home";render();} if(a==="sync-up"){state.notice="กำลังส่งขึ้นชีต...";render(); await syncUpload();} if(a==="sync-down"){state.notice="กำลังดึงจากชีต...";render(); await syncDownload();} if(a==="clear-notice"){state.notice="";render();} }catch(err){state.notice="ซิงก์ไม่สำเร็จ: "+(err.message||err);render();} })); document.querySelectorAll("[data-profile]").forEach(el=>el.addEventListener("click",()=>{ const g=el.dataset.profile; document.querySelectorAll(`[data-profile="${g}"]`).forEach(i=>i.classList.remove("active")); el.classList.add("active"); refreshPreview(); })); document.querySelectorAll("[data-profile-input]").forEach(el=>el.addEventListener("input",refreshPreview)); }
+    function bind(){ document.querySelectorAll("[data-action]").forEach(el=>el.addEventListener("click",async ev=>{ const a=el.dataset.action; try{ if(a==="theme")setTheme(state.theme==="light"?"dark":"light"); if(a==="settings"){state.tab="settings";render();} if(a==="switch-user")await switchUser(el.dataset.id); if(a==="add-user"){state.modal={type:"user"};render();setTimeout(()=>document.getElementById("user-name")?.focus(),0);} if(a==="confirm-user")await createUser(document.getElementById("user-name")?.value||""); if(a==="ask-delete-user"){state.modal={type:"delete-user"};render();} if(a==="confirm-delete-user")await deleteCurrentUser(); if(a==="prev-date")openDate(addDaysISO(state.viewDate,-1)); if(a==="next-date"&&state.viewDate<todayISO())openDate(addDaysISO(state.viewDate,1)); if(a==="eat-food"){const f=state.foods.find(item=>item.id===el.dataset.id); if(f)addEntry(f.name,f.kcal);} if(a==="delete-food")deleteFood(el.dataset.id); if(a==="food"){state.modal={type:"food"}; render(); setTimeout(()=>document.getElementById("food-name")?.focus(),0);} if(a==="manual"){state.modal={type:"manual"}; render(); setTimeout(()=>document.getElementById("manual-name")?.focus(),0);} if(a==="close-modal"&&(ev.target===el||el.classList.contains("icon-btn"))){state.modal=null;render();} if(a==="confirm-quick"){const kcal=Number(document.getElementById("modal-kcal").value); if(kcal>0)addEntry(state.modal.name,kcal);} if(a==="confirm-food")createFood(document.getElementById("food-name")?.value||"",document.getElementById("food-kcal")?.value||0); if(a==="confirm-manual"){const name=document.getElementById("manual-name").value.trim(); const kcal=Number(document.getElementById("manual-kcal").value); if(name&&kcal>0)addEntry(name,kcal);} if(a==="delete")deleteEntry(el.dataset.id); if(a==="tab"){state.tab=el.dataset.tab; if(state.tab==="home")openDate(todayISO()); else render();} if(a==="save-profile"){const p=currentDraft(); if(p.age>0&&p.height>0&&p.weight>0)persistProfile(p);} if(a==="cancel-settings"){state.tab="home";render();} if(a==="sync-up"){state.notice="กำลังส่งขึ้นชีต...";render(); await syncUpload();} if(a==="sync-down"){state.notice="กำลังดึงจากชีต...";render(); await syncDownload();} if(a==="clear-notice"){state.notice="";render();} }catch(err){state.notice="ซิงก์ไม่สำเร็จ: "+(err.name==="AbortError"?"Apps Script ไม่ตอบภายในเวลา":(err.message||err));render();} })); document.querySelectorAll("[data-profile]").forEach(el=>el.addEventListener("click",()=>{ const g=el.dataset.profile; document.querySelectorAll(`[data-profile="${g}"]`).forEach(i=>i.classList.remove("active")); el.classList.add("active"); refreshPreview(); })); document.querySelectorAll("[data-profile-input]").forEach(el=>el.addEventListener("input",refreshPreview)); document.querySelectorAll("[data-calorie-name]").forEach(el=>el.addEventListener("input",()=>renderEstimate(el.id))); }
     if("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
     init();
   </script>
