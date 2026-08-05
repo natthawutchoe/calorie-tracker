@@ -1,4 +1,4 @@
-},15000);<!doctype html>
+<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
@@ -309,7 +309,7 @@
     async function sheetGet(key){ const res=await fetchTimeout(`${SHEET_API}?key=${encodeURIComponent(key)}`,{cache:"no-store"}); if(!res.ok)throw new Error(`HTTP ${res.status}`); const data=await res.json(); if(!data.ok)throw new Error(data.error||"unknown error"); return data.value; }
     async function sheetSet(key,value){ const res=await fetchTimeout(SHEET_API,{method:"POST",body:JSON.stringify({key,value})},15000); if(!res.ok)throw new Error(`HTTP ${res.status}`); const data=await res.json(); if(!data.ok)throw new Error(data.error||"unknown error"); }
     async function sheetSetMany(items){
-      const res=await fetchTimeout(SHEET_API,{method:"POST",body:JSON.stringify({items})},7000);
+      const res=await fetchTimeout(SHEET_API,{method:"POST",body:JSON.stringify({items})},15000);
       if(!res.ok)throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       if(!data.ok)throw new Error(data.error||"unknown error");
