@@ -171,6 +171,7 @@
     function storageKey(key){ return state.currentUserId ? `user:${state.currentUserId}:${key}` : key; }
     function userLabel(){ return state.users.find(u=>u.id===state.currentUserId)?.name || "ผู้ใช้"; }
     function normalizeUserName(name){ return String(name||"").trim().replace(/\s+/g," ").toLowerCase(); }
+    function normalizePin(pin){ const clean=String(pin||"").replace(/\D/g,""); return clean.length===4?clean:""; }
     function normalizeUsers(users){
       const seenIds=new Set(), seenNames=new Set(), out=[];
       (users||[]).forEach(u=>{
@@ -178,10 +179,17 @@
         const id=String(u.id);
         const name=String(u.name).trim();
         const nameKey=normalizeUserName(name);
-        if(!name||seenIds.has(id)||seenNames.has(nameKey))return;
+        if(!name)return;
+        const pin=normalizePin(u.pin);
+        const existing=out.find(item=>item.id===id||normalizeUserName(item.name)===nameKey);
+        if(existing){
+          if(pin&&!existing.pin) existing.pin=pin;
+          return;
+        }
+        if(seenIds.has(id)||seenNames.has(nameKey))return;
         seenIds.add(id);
         seenNames.add(nameKey);
-        out.push({id,name});
+        out.push(pin?{id,name,pin}:{id,name});
       });
       return out;
     }
@@ -195,15 +203,15 @@
         const remoteUsers=normalizeUsers(JSON.parse(remoteUsersRaw||"[]"));
         const merged=remoteUsers.length ? normalizeUsers([...localUsers,...remoteUsers]) : [];
         state.users=merged;
-        state.currentUserId=merged.some(u=>u.id===localCurrent) ? localCurrent : "";
-        if(!state.currentUserId) localStorage.removeItem(LOCAL_PREFIX+"selectedUserConfirmed");
+        state.currentUserId="";
+        localStorage.removeItem(LOCAL_PREFIX+"selectedUserConfirmed");
         saveUsers();
       }catch{}
     }
     function migrateUsers(){
       state.users=normalizeUsers(readJson("users",[]));
-      const confirmedUser=localStorage.getItem(LOCAL_PREFIX+"selectedUserConfirmed")==="1";
-      state.currentUserId=confirmedUser ? (localStorage.getItem(LOCAL_PREFIX+"currentUserId") || "") : "";
+      state.currentUserId="";
+      localStorage.removeItem(LOCAL_PREFIX+"selectedUserConfirmed");
       if(!state.users.length){
         const legacyProfile=readJson("profile",null);
         if(legacyProfile){
@@ -215,9 +223,10 @@
             localStorage.setItem(LOCAL_PREFIX+`user:${id}:${k.slice(LOCAL_PREFIX.length)}`,localStorage.getItem(k));
           });
           saveUsers();
+          state.currentUserId="";
+          saveUsers();
         }
       }
-      if(state.currentUserId&&!state.users.some(u=>u.id===state.currentUserId)) state.currentUserId="";
       state.profile=state.currentUserId ? readJson(storageKey("profile"),null) : null;
       state.foods=state.currentUserId ? normalizeFoods(readJson(storageKey("foods"),[])) : [];
     }
@@ -402,14 +411,33 @@
     function deleteFood(id){ state.foods=state.foods.filter(f=>f.id!==id); saveFoods(); }
     function openDate(iso){ state.viewDate=iso; loadLog(iso); render(); }
     function setTheme(next){ state.theme=next; localStorage.setItem(LOCAL_PREFIX+"theme",next); document.documentElement.dataset.theme=next; render(); }
+    function lockUser(){ state.currentUserId=""; state.profile=null; state.foods=[]; state.logs={}; state.modal=null; state.tab="home"; localStorage.removeItem(LOCAL_PREFIX+"selectedUserConfirmed"); localStorage.setItem(LOCAL_PREFIX+"currentUserId",""); render(); }
     async function switchUser(id){
-      if(!state.users.some(u=>u.id===id)) return;
+      const user=state.users.find(u=>u.id===id);
+      if(!user) return;
+      if(state.currentUserId===id) return;
+      state.modal={type:user.pin?"login":"set-pin",userId:id};
+      render();
+      setTimeout(()=>document.getElementById(user.pin?"login-pin":"set-pin")?.focus(),0);
+    }
+    async function unlockUser(id,pin,setNewPin=false){
+      const user=state.users.find(u=>u.id===id);
+      if(!user) return;
+      const cleanPin=normalizePin(pin);
+      if(!cleanPin){ state.notice="PIN ต้องเป็นตัวเลข 4 ตัว"; render(); return; }
+      if(!setNewPin&&user.pin&&user.pin!==cleanPin){ state.notice="PIN ไม่ถูกต้อง"; render(); return; }
+      if(setNewPin){
+        user.pin=cleanPin;
+        state.users=normalizeUsers(state.users);
+      }
       state.currentUserId=id;
       localStorage.setItem(LOCAL_PREFIX+"currentUserId",id);
       localStorage.setItem(LOCAL_PREFIX+"selectedUserConfirmed","1");
       state.profile=readJson(storageKey("profile"),null);
       state.foods=normalizeFoods(readJson(storageKey("foods"),[]));
       state.logs={};
+      state.modal=null;
+      saveUsers();
       await loadLog(state.viewDate,true);
       state.notice=`กำลังดึงข้อมูลของ ${userLabel()}...`;
       render();
@@ -421,12 +449,15 @@
       }
       state.tab=state.profile ? "home" : "settings";
       render();
+      if(setNewPin) queueAutoSync();
     }
-    async function createUser(name){
+    async function createUser(name,pin){
       const clean=name.trim();
       if(!clean) return;
+      const cleanPin=normalizePin(pin);
+      if(!cleanPin){ state.notice="ตั้ง PIN เป็นตัวเลข 4 ตัวก่อน"; render(); return; }
       const id="u-"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-      state.users.push({id,name:clean});
+      state.users.push({id,name:clean,pin:cleanPin});
       state.currentUserId=id;
       localStorage.setItem(LOCAL_PREFIX+"selectedUserConfirmed","1");
       state.profile=null;
@@ -443,27 +474,27 @@
       if(state.users.length<=1){ state.notice="ต้องมีผู้ใช้อย่างน้อย 1 คน"; state.modal=null; render(); return; }
       const deletingId=state.currentUserId;
       state.users=state.users.filter(u=>u.id!==deletingId);
-      state.currentUserId=state.users[0].id;
-      localStorage.setItem(LOCAL_PREFIX+"selectedUserConfirmed","1");
-      state.profile=readJson(storageKey("profile"),null);
-      state.foods=normalizeFoods(readJson(storageKey("foods"),[]));
+      state.currentUserId="";
+      localStorage.removeItem(LOCAL_PREFIX+"selectedUserConfirmed");
+      state.profile=null;
+      state.foods=[];
       state.logs={};
       state.modal=null;
-      state.tab=state.profile ? "home" : "settings";
+      state.tab="home";
       saveUsers();
       await loadLog(state.viewDate,true);
-      state.notice="ลบผู้ใช้แล้ว กำลังซิงก์รายชื่อขึ้น Google Sheets";
+      state.notice="ลบผู้ใช้แล้ว เลือกผู้ใช้และใส่ PIN เพื่อเข้าอีกครั้ง";
       render();
-      queueAutoSync();
+      sheetSet("users",JSON.stringify(state.users)).catch(()=>{});
     }
 
     function render(){ const app=document.getElementById("app"); document.querySelector('meta[name="theme-color"]').setAttribute("content",state.theme==="dark"?"#0a0a0a":"#ffffff"); if(!state.loaded){ app.className="status"; app.innerHTML='<div class="loader-stack"><div class="spinner"></div><span class="overline">loading</span></div>'; return; } app.className=""; const view=!state.currentUserId?renderUserSelect():((!state.profile||state.tab==="settings")?renderOnboard():renderHome()); app.innerHTML=view+renderLoadingOverlay(); bind(); }
     function renderLoadingOverlay(){ return state.loading?`<div class="loading-overlay" role="status" aria-live="polite"><div class="loading-card"><div class="spinner"></div><div class="loading-title">${state.loading}</div>${state.loadingDetail?`<div class="loading-detail">${state.loadingDetail}</div>`:""}<div class="loading-line"></div></div></div>`:""; }
-    function renderUserSelect(){ const busy=state.bootstrapping||!!state.loading; return `<main class="onboard"><div class="overline">Calorie Tracker</div><div class="title">เลือกผู้ใช้</div><p class="onboard-copy">${state.bootstrapping?"กำลังดึงรายชื่อจาก Google Sheets...":"เลือกชื่อที่มีอยู่เพื่อโหลดโปรไฟล์ เมนูที่กินบ่อย และบันทึกอาหารจากชีต หรือสร้างผู้ใช้ใหม่"}</p>${state.users.length?`<div class="activity">${state.users.map(u=>`<button class="select-btn" data-action="switch-user" data-id="${u.id}" ${busy?"disabled":""}>${u.name}</button>`).join("")}</div>`:`<div class="entry-empty">ยังไม่พบรายชื่อผู้ใช้ในเครื่องนี้</div>`}<button class="primary" style="margin-top:16px" data-action="add-user" ${busy?"disabled":""}>${icon("plus")}<span>เพิ่มผู้ใช้ใหม่</span></button><button class="secondary" data-action="refresh-users-loading" ${busy?"disabled":""}>${busy?"กำลังดึงรายชื่อ...":"ดึงรายชื่อจากชีตอีกครั้ง"}</button>${renderModal()}${renderToast()}</main>`; }
+    function renderUserSelect(){ const busy=state.bootstrapping||!!state.loading; return `<main class="onboard"><div class="overline">Calorie Tracker</div><div class="title">เลือกผู้ใช้</div><p class="onboard-copy">${state.bootstrapping?"กำลังดึงรายชื่อจาก Google Sheets...":"เลือกชื่อแล้วใส่ PIN 4 ตัว เพื่อโหลดข้อมูลแยกของแต่ละคน"}</p>${state.users.length?`<div class="activity">${state.users.map(u=>`<button class="select-btn" data-action="switch-user" data-id="${u.id}" ${busy?"disabled":""}>${u.name}</button>`).join("")}</div>`:`<div class="entry-empty">ยังไม่พบรายชื่อผู้ใช้ในเครื่องนี้</div>`}<button class="primary" style="margin-top:16px" data-action="add-user" ${busy?"disabled":""}>${icon("plus")}<span>เพิ่มผู้ใช้ใหม่</span></button><button class="secondary" data-action="refresh-users-loading" ${busy?"disabled":""}>${busy?"กำลังดึงรายชื่อ...":"ดึงรายชื่อจากชีตอีกครั้ง"}</button>${renderModal()}${renderToast()}</main>`; }
     function renderHome(){ const {target}=metrics(); const entries=state.logs[state.viewDate]||[]; const eaten=entries.reduce((s,e)=>s+Number(e.kcal),0); const pct=target?Math.min(100,Math.round(eaten/target*100)):0; const remaining=target-eaten; return `<main class="screen"><header class="masthead"><div><div class="overline">${userLabel()}</div><div class="title">${state.viewDate===todayISO()?"วันนี้":thaiDate(state.viewDate)}</div></div><div class="icon-row"><button class="icon-btn" data-action="theme" aria-label="สลับธีม">${icon(state.theme==="light"?"moon":"sun")}</button><button class="icon-btn" data-action="settings" aria-label="ตั้งค่า">${icon("settings")}</button></div></header>${renderUserSwitcher()}${state.tab==="history"?renderDateSwitcher():""}<section class="gauge-wrap">${renderGauge(pct,eaten,target)}<div class="hint">${remaining>0?`อีก <span class="mono" style="color:var(--text)">${remaining}</span> แคล ถึงเป้าวันนี้`:`<span style="color:var(--text)">ถึงเป้าแล้ววันนี้</span>`}</div></section>${state.tab==="home"?renderFoodList():""}${renderEntries(entries)}${renderSync()}${renderNav()}${renderModal()}${renderToast()}</main>`; }
     function renderGauge(pct,eaten,target){ const r=78,cc=Math.PI*2*r,offset=cc-pct/100*cc; return `<div class="gauge"><svg width="192" height="192" viewBox="0 0 192 192"><circle cx="96" cy="96" r="${r}" fill="none" stroke="var(--border)" stroke-width="1.5"></circle><circle cx="96" cy="96" r="${r}" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="${cc}" stroke-dashoffset="${offset}" transform="rotate(-90 96 96)"></circle></svg><div class="gauge-center"><div class="gauge-number">${eaten}</div><div class="small-mono">/ ${target||"-"} kcal</div></div></div>`; }
     function renderDateSwitcher(){ return `<div class="date-switcher"><button class="icon-btn" data-action="prev-date">${icon("left")}</button><div class="date-label">${thaiDate(state.viewDate)}</div><button class="icon-btn" data-action="next-date" ${state.viewDate>=todayISO()?"disabled":""}>${icon("right")}</button><button class="small-btn" data-action="today-date" ${state.viewDate===todayISO()?"disabled":""}>วันนี้</button></div>`; }
-    function renderUserSwitcher(){ return `<div class="user-strip">${state.users.map(u=>`<button class="user-pill ${u.id===state.currentUserId?"active":""}" data-action="switch-user" data-id="${u.id}">${u.name}</button>`).join("")}<button class="user-pill" data-action="add-user">+ เพิ่มผู้ใช้</button>${state.users.length>1?`<button class="user-pill danger-btn" data-action="ask-delete-user">ลบผู้ใช้นี้</button>`:""}</div>`; }
+    function renderUserSwitcher(){ return `<div class="user-strip">${state.users.map(u=>`<button class="user-pill ${u.id===state.currentUserId?"active":""}" data-action="switch-user" data-id="${u.id}">${u.name}</button>`).join("")}<button class="user-pill" data-action="lock-user">ออก</button><button class="user-pill" data-action="add-user">+ เพิ่มผู้ใช้</button>${state.users.length>1?`<button class="user-pill danger-btn" data-action="ask-delete-user">ลบผู้ใช้นี้</button>`:""}</div>`; }
     function renderFoodList(){ const foods=state.foods||[]; return `<section class="section"><div class="section-head overline">เมนูที่กินบ่อย · ${userLabel()}</div>${foods.length?`<div class="food-grid">${foods.map(f=>`<div class="food-card"><button class="food-card-main" data-action="eat-food" data-id="${f.id}"><span class="food-name">${f.name}</span><span class="food-kcal">${f.kcal} kcal</span></button><div class="food-card-actions"><button class="icon-btn" data-action="delete-food" data-id="${f.id}" aria-label="ลบเมนู">${icon("trash")}</button></div></div>`).join("")}</div>`:`<div class="entry-empty">ยังไม่มีเมนูที่กินบ่อยของผู้ใช้นี้</div>`}<div class="food-tools"><button class="primary" data-action="food">${icon("plus")}<span>เพิ่มเมนูที่กินบ่อย</span></button><button class="small-btn" data-action="manual">เพิ่มอาหารครั้งเดียว</button></div></section>`; }
     function renderEntries(entries){ return `<section class="section"><div class="section-head overline">รายการ (${entries.length})</div>${entries.length?`<div>${entries.map(e=>`<div class="entry"><div><div class="entry-name">${e.name}</div><div class="entry-meta">${e.time} · ${e.kcal} kcal</div></div>${state.viewDate===todayISO()?`<button class="icon-btn" data-action="delete" data-id="${e.id}">${icon("trash")}</button>`:""}</div>`).join("")}</div>`:`<div class="entry-empty">ยังไม่มีรายการในวันนี้</div>`}</section>`; }
     function renderSync(){ const busy=state.syncing||!!state.loading; return `<section class="section"><div class="sync-panel"><div class="overline">Sync · ${userLabel()}</div><p>ปุ่มนี้ซิงก์เฉพาะผู้ใช้ที่เลือกอยู่ รวมถึงโปรไฟล์ เมนูที่กินบ่อย และรายการวันนี้ โดยใช้ key แยก เช่น <span class="mono">user:${state.currentUserId}:foods</span></p><div class="sync-actions"><button class="small-btn" data-action="sync-up" ${busy?"disabled":""}>${state.syncing?"กำลังส่ง...":"ส่งขึ้นชีต"}</button><button class="small-btn" data-action="sync-down" ${busy?"disabled":""}>ดึงจากชีต</button></div></div></section>`; }
@@ -473,7 +504,9 @@
       const close=`<div class="modal-top"><button class="icon-btn" data-action="close-modal">${icon("close")}</button></div>`;
       if(state.modal.type==="quick")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;line-height:1.35">${state.modal.name}</div><div class="hint" style="text-align:left;margin:4px 0 16px">ปรับแคลได้ถ้าปริมาณไม่ตรง</div><div class="field-row"><input id="modal-kcal" class="field mono" type="number" inputmode="numeric" value="${state.modal.kcal}"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-quick">${icon("check")}<span>เพิ่มรายการ</span></button></div></div>`;
       if(state.modal.type==="food")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มเมนูที่กินบ่อย</div><input id="food-name" class="field" data-calorie-name="food-name" placeholder="ชื่ออาหาร เช่น ข้าวมันไก่"><div class="estimate-box" data-estimate-for="food-name"><div class="hint" style="text-align:left;margin:0">พิมพ์ชื่อเมนูเพื่อให้ระบบเดาค่าแคลจากฐานข้อมูลในแอป</div></div><div class="field-row"><input id="food-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-food">${icon("check")}<span>บันทึกเมนู</span></button></div></div>`;
-      if(state.modal.type==="user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มผู้ใช้งาน</div><input id="user-name" class="field" placeholder="ชื่อผู้ใช้ เช่น คุณพ่อ"><button class="primary" style="margin-top:16px" data-action="confirm-user">${icon("check")}<span>สร้างผู้ใช้</span></button></div></div>`;
+      if(state.modal.type==="user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มผู้ใช้งาน</div><input id="user-name" class="field" placeholder="ชื่อผู้ใช้ เช่น คุณพ่อ"><div class="label">PIN 4 ตัว</div><input id="user-pin" class="field mono" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="0000"><button class="primary" style="margin-top:16px" data-action="confirm-user">${icon("check")}<span>สร้างผู้ใช้</span></button></div></div>`;
+      if(state.modal.type==="login"){ const u=state.users.find(item=>item.id===state.modal.userId); return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:8px">เข้าใช้งาน ${u?.name||""}</div><p class="hint" style="text-align:left;margin:0 0 12px">ใส่ PIN 4 ตัวเพื่อโหลดข้อมูลของคนนี้</p><input id="login-pin" class="field mono" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="PIN"><button class="primary" style="margin-top:16px" data-action="confirm-login">${icon("check")}<span>เข้าใช้งาน</span></button></div></div>`; }
+      if(state.modal.type==="set-pin"){ const u=state.users.find(item=>item.id===state.modal.userId); return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:8px">ตั้ง PIN ให้ ${u?.name||""}</div><p class="hint" style="text-align:left;margin:0 0 12px">ผู้ใช้นี้ยังไม่มี PIN ตั้งเลข 4 ตัวก่อนเข้าใช้งาน</p><input id="set-pin" class="field mono" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="PIN ใหม่"><button class="primary" style="margin-top:16px" data-action="confirm-set-pin">${icon("check")}<span>ตั้ง PIN และเข้าใช้งาน</span></button></div></div>`; }
       if(state.modal.type==="delete-user")return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:8px">ลบผู้ใช้ ${userLabel()}</div><p class="hint" style="text-align:left;margin:0 0 16px">ผู้ใช้นี้จะถูกเอาออกจากรายการในเครื่องนี้ แล้วแอปจะซิงก์รายชื่อขึ้นชีตให้อัตโนมัติ</p><button class="primary" style="margin-top:16px;background:#b42318;color:#fff" data-action="confirm-delete-user">${icon("trash")}<span>ยืนยันลบผู้ใช้</span></button></div></div>`;
       return `<div class="modal-backdrop" data-action="close-modal"><div class="modal">${close}<div class="display" style="font-size:22px;margin-bottom:16px">เพิ่มอาหารครั้งเดียว</div><input id="manual-name" class="field" data-calorie-name="manual-name" placeholder="ชื่ออาหาร เช่น ผัดไทย"><div class="estimate-box" data-estimate-for="manual-name"><div class="hint" style="text-align:left;margin:0">พิมพ์ชื่อเมนูเพื่อให้ระบบเดาค่าแคลจากฐานข้อมูลในแอป</div></div><div class="field-row"><input id="manual-kcal" class="field mono" type="number" inputmode="numeric" placeholder="แคลอรี"><span class="small-mono">kcal</span></div><button class="primary" style="margin-top:16px" data-action="confirm-manual">${icon("check")}<span>เพิ่มรายการ</span></button></div></div>`;
     }
@@ -483,7 +516,7 @@
     function currentDraft(){ const existing=state.profile||{}; return { gender:document.querySelector('[data-profile="gender"].active')?.dataset.value||existing.gender||"male", age:Number(document.querySelector('[data-profile-input="age"]')?.value||existing.age||0), height:Number(document.querySelector('[data-profile-input="height"]')?.value||existing.height||0), weight:Number(document.querySelector('[data-profile-input="weight"]')?.value||existing.weight||0), goalDirection:document.querySelector('[data-profile="goalDirection"].active')?.dataset.value||existing.goalDirection||"gain", activity:document.querySelector('[data-profile="activity"].active')?.dataset.value||existing.activity||"sedentary", surplus:Number(document.querySelector('[data-profile="surplus"].active')?.dataset.value||existing.surplus||500) }; }
     function renderPreview(p){ if(!Number(p.age)||!Number(p.height)||!Number(p.weight))return'<div style="height:20px"></div>'; const m=metrics(p); return `<div class="panel preview"><div class="preview-line"><span style="color:var(--muted)">BMI ปัจจุบัน</span><span class="mono">${m.bmi.toFixed(1)} · ${bmiCategory(m.bmi)}</span></div><div class="preview-line"><span style="color:var(--muted)">เป้าแคลต่อวัน</span><strong class="mono">${m.target} kcal</strong></div></div>`; }
     function refreshPreview(){ const panel=document.querySelector(".preview"); const html=renderPreview(currentDraft()); if(panel)panel.outerHTML=html; }
-    function bind(){ document.querySelectorAll("[data-action]").forEach(el=>el.addEventListener("click",async ev=>{ const a=el.dataset.action; try{ if(a==="theme")setTheme(state.theme==="light"?"dark":"light"); if(a==="settings"){state.tab="settings";render();} if(a==="switch-user")await switchUser(el.dataset.id); if(a==="add-user"){state.modal={type:"user"};render();setTimeout(()=>document.getElementById("user-name")?.focus(),0);} if(a==="confirm-user")await createUser(document.getElementById("user-name")?.value||""); if(a==="ask-delete-user"){state.modal={type:"delete-user"};render();} if(a==="confirm-delete-user")await deleteCurrentUser(); if(a==="prev-date")openDate(addDaysISO(state.viewDate,-1)); if(a==="next-date"&&state.viewDate<todayISO())openDate(addDaysISO(state.viewDate,1)); if(a==="today-date")openDate(todayISO()); if(a==="eat-food"){const f=state.foods.find(item=>item.id===el.dataset.id); if(f)addEntry(f.name,f.kcal);} if(a==="delete-food")deleteFood(el.dataset.id); if(a==="food"){state.modal={type:"food"}; render(); setTimeout(()=>document.getElementById("food-name")?.focus(),0);} if(a==="manual"){state.modal={type:"manual"}; render(); setTimeout(()=>document.getElementById("manual-name")?.focus(),0);} if(a==="close-modal"&&(ev.target===el||el.classList.contains("icon-btn"))){state.modal=null;render();} if(a==="confirm-quick"){const kcal=Number(document.getElementById("modal-kcal").value); if(kcal>0)addEntry(state.modal.name,kcal);} if(a==="confirm-food")createFood(document.getElementById("food-name")?.value||"",document.getElementById("food-kcal")?.value||0); if(a==="confirm-manual"){const name=document.getElementById("manual-name").value.trim(); const kcal=Number(document.getElementById("manual-kcal").value); if(name&&kcal>0)addEntry(name,kcal);} if(a==="delete")deleteEntry(el.dataset.id); if(a==="tab"){state.tab=el.dataset.tab; if(state.tab==="home")openDate(todayISO()); else render();} if(a==="save-profile"){const p=currentDraft(); if(p.age>0&&p.height>0&&p.weight>0)persistProfile(p);} if(a==="cancel-settings"){state.tab="home";render();} if(a==="sync-up"){state.notice="กำลังส่งขึ้นชีต...";render(); await syncUpload();} if(a==="sync-down"){state.notice="กำลังดึงจากชีต...";render(); await syncDownload();} if(a==="refresh-users"){state.notice="กำลังดึงรายชื่อจากชีต...";state.bootstrapping=true;render(); await restoreUsersFromSheet(); migrateUsers(); state.bootstrapping=false; state.notice="ดึงรายชื่อแล้ว";render();} if(a==="clear-notice"){state.notice="";render();} }catch(err){state.bootstrapping=false;state.syncing=false;stopLoading();state.notice="ซิงก์ไม่สำเร็จ: "+(err.name==="AbortError"?"Apps Script ไม่ตอบภายในเวลา":(err.message||err));render();} })); document.querySelectorAll("[data-profile]").forEach(el=>el.addEventListener("click",()=>{ const g=el.dataset.profile; document.querySelectorAll(`[data-profile="${g}"]`).forEach(i=>i.classList.remove("active")); el.classList.add("active"); refreshPreview(); })); document.querySelectorAll("[data-profile-input]").forEach(el=>el.addEventListener("input",refreshPreview)); document.querySelectorAll("[data-calorie-name]").forEach(el=>el.addEventListener("input",()=>renderEstimate(el.id))); }
+    function bind(){ document.querySelectorAll("[data-action]").forEach(el=>el.addEventListener("click",async ev=>{ const a=el.dataset.action; try{ if(a==="theme")setTheme(state.theme==="light"?"dark":"light"); if(a==="settings"){state.tab="settings";render();} if(a==="lock-user")lockUser(); if(a==="switch-user")await switchUser(el.dataset.id); if(a==="add-user"){state.modal={type:"user"};render();setTimeout(()=>document.getElementById("user-name")?.focus(),0);} if(a==="confirm-user")await createUser(document.getElementById("user-name")?.value||"",document.getElementById("user-pin")?.value||""); if(a==="confirm-login")await unlockUser(state.modal.userId,document.getElementById("login-pin")?.value||"",false); if(a==="confirm-set-pin")await unlockUser(state.modal.userId,document.getElementById("set-pin")?.value||"",true); if(a==="ask-delete-user"){state.modal={type:"delete-user"};render();} if(a==="confirm-delete-user")await deleteCurrentUser(); if(a==="prev-date")openDate(addDaysISO(state.viewDate,-1)); if(a==="next-date"&&state.viewDate<todayISO())openDate(addDaysISO(state.viewDate,1)); if(a==="today-date")openDate(todayISO()); if(a==="eat-food"){const f=state.foods.find(item=>item.id===el.dataset.id); if(f)addEntry(f.name,f.kcal);} if(a==="delete-food")deleteFood(el.dataset.id); if(a==="food"){state.modal={type:"food"}; render(); setTimeout(()=>document.getElementById("food-name")?.focus(),0);} if(a==="manual"){state.modal={type:"manual"}; render(); setTimeout(()=>document.getElementById("manual-name")?.focus(),0);} if(a==="close-modal"&&(ev.target===el||el.classList.contains("icon-btn"))){state.modal=null;render();} if(a==="confirm-quick"){const kcal=Number(document.getElementById("modal-kcal").value); if(kcal>0)addEntry(state.modal.name,kcal);} if(a==="confirm-food")createFood(document.getElementById("food-name")?.value||"",document.getElementById("food-kcal")?.value||0); if(a==="confirm-manual"){const name=document.getElementById("manual-name").value.trim(); const kcal=Number(document.getElementById("manual-kcal").value); if(name&&kcal>0)addEntry(name,kcal);} if(a==="delete")deleteEntry(el.dataset.id); if(a==="tab"){state.tab=el.dataset.tab; if(state.tab==="home")openDate(todayISO()); else render();} if(a==="save-profile"){const p=currentDraft(); if(p.age>0&&p.height>0&&p.weight>0)persistProfile(p);} if(a==="cancel-settings"){state.tab="home";render();} if(a==="sync-up"){state.notice="กำลังส่งขึ้นชีต...";render(); await syncUpload();} if(a==="sync-down"){state.notice="กำลังดึงจากชีต...";render(); await syncDownload();} if(a==="refresh-users"){state.notice="กำลังดึงรายชื่อจากชีต...";state.bootstrapping=true;render(); await restoreUsersFromSheet(); migrateUsers(); state.bootstrapping=false; state.notice="ดึงรายชื่อแล้ว";render();} if(a==="clear-notice"){state.notice="";render();} }catch(err){state.bootstrapping=false;state.syncing=false;stopLoading();state.notice="ซิงก์ไม่สำเร็จ: "+(err.name==="AbortError"?"Apps Script ไม่ตอบภายในเวลา":(err.message||err));render();} })); document.querySelectorAll("[data-profile]").forEach(el=>el.addEventListener("click",()=>{ const g=el.dataset.profile; document.querySelectorAll(`[data-profile="${g}"]`).forEach(i=>i.classList.remove("active")); el.classList.add("active"); refreshPreview(); })); document.querySelectorAll("[data-profile-input]").forEach(el=>el.addEventListener("input",refreshPreview)); document.querySelectorAll("[data-calorie-name]").forEach(el=>el.addEventListener("input",()=>renderEstimate(el.id))); }
     document.addEventListener("click",async ev=>{
       const el=ev.target.closest('[data-action="refresh-users-loading"]');
       if(!el||state.loading)return;
