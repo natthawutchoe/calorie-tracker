@@ -160,6 +160,7 @@
     ];
     const state = { loaded:false, bootstrapping:false, loading:"", loadingDetail:"", theme:localStorage.getItem(LOCAL_PREFIX+"theme")||"light", users:[], currentUserId:"", profile:null, foods:[], tab:"home", viewDate:todayISO(), logs:{}, modal:null, notice:"", syncing:false };
     let autoSyncTimer=null;
+    let pendingSyncScopes=new Set();
     let sheetBatchSupport=true;
 
     function localISO(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
@@ -194,6 +195,28 @@
       return out;
     }
     function normalizeFoods(foods){ return (foods||[]).filter(f=>f&&f.id&&f.name&&Number(f.kcal)>0).map(f=>({id:String(f.id),name:String(f.name),kcal:Number(f.kcal)})); }
+    function mergeFoods(...lists){
+      const out=[], seenIds=new Set(), seenNames=new Set();
+      lists.flat().forEach(f=>{
+        if(!f||!f.id||!f.name||Number(f.kcal)<=0)return;
+        const id=String(f.id), name=String(f.name).trim(), nameKey=normalizeUserName(name);
+        if(seenIds.has(id)||seenNames.has(nameKey))return;
+        seenIds.add(id); seenNames.add(nameKey);
+        out.push({id,name,kcal:Number(f.kcal)});
+      });
+      return out;
+    }
+    function mergeLogs(...lists){
+      const out=[], seen=new Set();
+      lists.flat().forEach(e=>{
+        if(!e||!e.id||!e.name||Number(e.kcal)<=0)return;
+        const id=String(e.id);
+        if(seen.has(id))return;
+        seen.add(id);
+        out.push({id,name:String(e.name),kcal:Number(e.kcal),time:e.time||""});
+      });
+      return out;
+    }
     function saveUsers(){ writeJson("users",state.users); localStorage.setItem(LOCAL_PREFIX+"currentUserId",state.currentUserId); }
     async function restoreUsersFromSheet(){
       const localUsers=normalizeUsers(readJson("users",[]));
@@ -342,9 +365,9 @@
         }
       }catch{}
       try{ const remoteProfile=await sheetGet(storageKey("profile")); if(remoteProfile){ state.profile=JSON.parse(remoteProfile); writeJson(storageKey("profile"),state.profile); } }catch{}
-      try{ const remoteFoods=await sheetGet(storageKey("foods")); if(remoteFoods){ state.foods=normalizeFoods(JSON.parse(remoteFoods)); writeJson(storageKey("foods"),state.foods); } }catch{}
+      try{ const remoteFoods=await sheetGet(storageKey("foods")); if(remoteFoods){ state.foods=mergeFoods(state.foods,normalizeFoods(JSON.parse(remoteFoods))); writeJson(storageKey("foods"),state.foods); } }catch{}
     }
-    async function syncUpload(silent=false){
+    async function syncUpload(silent=false,scopes=null){
       if(state.syncing){
         if(!silent){
           stopLoading();
@@ -356,12 +379,14 @@
       state.syncing=true;
       if(!silent) startLoading("กำลังส่งขึ้นชีต",`กำลังบันทึกข้อมูลของ ${userLabel()} ไปยัง Google Sheets`);
       try{
-      const items=[
-        {key:"users",value:JSON.stringify(state.users)},
-        {key:storageKey("profile"),value:JSON.stringify(state.profile)},
-        {key:storageKey("foods"),value:JSON.stringify(state.foods)},
-        {key:storageKey(`log:${state.viewDate}`),value:JSON.stringify(state.logs[state.viewDate]||[])}
-      ];
+      const scopeSet=scopes?new Set(scopes):null;
+      const include=scope=>!scopeSet||scopeSet.has("all")||scopeSet.has(scope);
+      const items=[];
+      if(include("users"))items.push({key:"users",value:JSON.stringify(state.users)});
+      if(include("profile"))items.push({key:storageKey("profile"),value:JSON.stringify(state.profile)});
+      if(include("foods"))items.push({key:storageKey("foods"),value:JSON.stringify(state.foods)});
+      if(include("log"))items.push({key:storageKey(`log:${state.viewDate}`),value:JSON.stringify(state.logs[state.viewDate]||[])});
+      if(!items.length)return;
       if(sheetBatchSupport!==false){
         try{
           await sheetSetMany(items);
@@ -381,10 +406,15 @@
         render();
       }
     }
-    function queueAutoSync(){
+    function queueAutoSync(scope="all"){
       if(!state.currentUserId)return;
+      pendingSyncScopes.add(scope);
       clearTimeout(autoSyncTimer);
-      autoSyncTimer=setTimeout(()=>syncUpload(true).catch(()=>{}),1200);
+      autoSyncTimer=setTimeout(()=>{
+        const scopes=[...pendingSyncScopes];
+        pendingSyncScopes.clear();
+        syncUpload(true,scopes).catch(()=>{});
+      },500);
     }
     async function syncDownload(){
       startLoading("กำลังดึงจากชีต",`กำลังโหลดข้อมูลของ ${userLabel()} จาก Google Sheets`);
@@ -392,9 +422,11 @@
         await syncBootstrap();
         const log=await sheetGet(storageKey(`log:${state.viewDate}`));
         if(log){
-          state.logs[state.viewDate]=JSON.parse(log);
+          state.logs[state.viewDate]=mergeLogs(state.logs[state.viewDate]||[],JSON.parse(log));
           writeJson(storageKey(`log:${state.viewDate}`),state.logs[state.viewDate]);
         }
+        queueAutoSync("foods");
+        queueAutoSync("log");
         state.notice=`ดึงข้อมูลของ ${userLabel()} แล้ว`;
       }finally{
         stopLoading();
@@ -402,11 +434,11 @@
       }
     }
     async function loadLog(iso,force=false){ if(state.logs[iso]&&!force)return; state.logs[iso]=readJson(storageKey(`log:${iso}`),[]); }
-    function persistProfile(p){ state.profile=p; writeJson(storageKey("profile"),p); state.tab="home"; render(); queueAutoSync(); }
-    function persistLog(iso,entries){ state.logs[iso]=entries; writeJson(storageKey(`log:${iso}`),entries); render(); queueAutoSync(); }
+    function persistProfile(p){ state.profile=p; writeJson(storageKey("profile"),p); state.tab="home"; render(); queueAutoSync("profile"); }
+    function persistLog(iso,entries){ state.logs[iso]=entries; writeJson(storageKey(`log:${iso}`),entries); render(); queueAutoSync("log"); }
     function addEntry(name,kcal){ const iso=state.viewDate; const entry={id:uid(),name,kcal:Number(kcal),time:new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"})}; persistLog(iso,[...(state.logs[iso]||[]),entry]); state.modal=null; render(); }
     function deleteEntry(id){ persistLog(state.viewDate,(state.logs[state.viewDate]||[]).filter(e=>e.id!==id)); }
-    function saveFoods(){ state.foods=normalizeFoods(state.foods); writeJson(storageKey("foods"),state.foods); render(); queueAutoSync(); }
+    function saveFoods(){ state.foods=mergeFoods(state.foods); writeJson(storageKey("foods"),state.foods); render(); queueAutoSync("foods"); }
     function createFood(name,kcal){ const clean=name.trim(); const calories=Number(kcal); if(!clean||calories<=0)return; state.foods=[...state.foods,{id:uid(),name:clean,kcal:calories}]; state.modal=null; saveFoods(); }
     function deleteFood(id){ state.foods=state.foods.filter(f=>f.id!==id); saveFoods(); }
     function openDate(iso){ state.viewDate=iso; loadLog(iso); render(); }
@@ -449,7 +481,7 @@
       }
       state.tab=state.profile ? "home" : "settings";
       render();
-      if(setNewPin) queueAutoSync();
+      if(setNewPin) queueAutoSync("users");
     }
     async function createUser(name,pin){
       const clean=name.trim();
