@@ -1,4 +1,4 @@
-const CACHE_NAME = "calorie-tracker-v24";
+const CACHE_NAME = "calorie-tracker-v25";
 const ASSETS = ["./", "./index.html", "./dashboard.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", (event) => {
