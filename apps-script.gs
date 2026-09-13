@@ -172,6 +172,16 @@ function syncUserData_(key, value, userNames) {
 
 function doGet(e) {
   if (e.parameter && e.parameter.cap === "batch") return json_({ ok: true, batch: true });
+  const keysRaw = String((e.parameter && e.parameter.keys) || "");
+  if (keysRaw) {
+    let keys = [];
+    try { keys = JSON.parse(keysRaw); } catch (err) { keys = keysRaw.split("|"); }
+    const values = {};
+    keys.filter(Boolean).forEach((key) => {
+      values[String(key)] = getRaw_(String(key));
+    });
+    return json_({ ok: true, values });
+  }
   const key = String((e.parameter && e.parameter.key) || "");
   if (!key) return json_({ ok: false, error: "missing key" });
   return json_({ ok: true, key, value: getRaw_(key) });
