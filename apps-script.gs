@@ -3,6 +3,7 @@ const USERS_SHEET = "Users";
 const PROFILES_SHEET = "Profiles";
 const FOODS_SHEET = "Foods";
 const LOGS_SHEET = "Logs";
+const WEIGHTS_SHEET = "Weights";
 const SPREADSHEET_ID = "1u7iTIX_Rw73tvnb5XMjorbwSCjNN0YaDkztSW6k2MFE";
 
 let spreadsheet__;
@@ -38,6 +39,10 @@ function foodsSheet_() {
 
 function logsSheet_() {
   return sheet_(LOGS_SHEET, ["userId", "userName", "date", "totalKcal", "entryCount", "entriesJson", "updatedAt"]);
+}
+
+function weightsSheet_() {
+  return sheet_(WEIGHTS_SHEET, ["userId", "userName", "date", "weightKg", "time", "weightJson", "updatedAt"]);
 }
 
 function json_(payload) {
@@ -99,7 +104,7 @@ function getRaw_(key) {
 }
 
 function parseUserKey_(key) {
-  const match = String(key || "").match(/^user:([^:]+):(profile|foods|log)(?::(.+))?$/);
+  const match = String(key || "").match(/^user:([^:]+):(profile|foods|log|weight)(?::(.+))?$/);
   if (!match) return null;
   return { userId: match[1], type: match[2], date: match[3] || "" };
 }
@@ -153,6 +158,15 @@ function syncUserData_(key, value, userNames) {
     const sheet = logsSheet_();
     const row = findRowByTwoValues_(sheet, 1, meta.userId, 3, meta.date) || sheet.getLastRow() + 1;
     sheet.getRange(row, 1, 1, 7).setValues([[meta.userId, name, meta.date, total, entries.length, value, new Date()]]);
+    return;
+  }
+
+  if (meta.type === "weight") {
+    let item = {};
+    try { item = JSON.parse(value || "{}") || {}; } catch (err) {}
+    const sheet = weightsSheet_();
+    const row = findRowByTwoValues_(sheet, 1, meta.userId, 3, meta.date) || sheet.getLastRow() + 1;
+    sheet.getRange(row, 1, 1, 7).setValues([[meta.userId, name, meta.date, Number(item.weightKg || 0), String(item.time || ""), value, new Date()]]);
   }
 }
 
