@@ -39,7 +39,7 @@
     const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
     const add=(s,n)=>{const [y,m,d]=s.split("-").map(Number);return iso(new Date(y,m-1,d+n))};
     const thai=s=>new Date(s+"T00:00:00").toLocaleDateString("th-TH",{day:"numeric",month:"short"});
-    async function fetchTimeout(url,ms=10000){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);try{return await fetch(url,{cache:"no-store",signal:c.signal})}finally{clearTimeout(t)}}
+    async function fetchTimeout(url,ms=20000){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);try{return await fetch(url,{cache:"no-store",signal:c.signal})}finally{clearTimeout(t)}}
     async function get(key){const r=await fetchTimeout(`${SHEET_API}?key=${encodeURIComponent(key)}&t=${Date.now()}`);const j=await r.json();if(!j.ok)throw Error(j.error||"sheet error");return j.value}
     async function getMany(keys){const r=await fetchTimeout(`${SHEET_API}?keys=${encodeURIComponent(JSON.stringify(keys))}&t=${Date.now()}`,20000);const j=await r.json();if(!j.ok)throw Error(j.error||"sheet error");return j.values||{}}
     function target(p){if(!p||!p.age||!p.height||!p.weight)return 0;const b=(10*p.weight)+(6.25*p.height)-(5*p.age)+(p.gender==="male"?5:-161);const a={light:1.375,moderate:1.55,active:1.725}[p.activity]||1.2;return Math.round(b*a+(p.goalDirection==="lose"?-(p.surplus||300):(p.surplus||300)))}
