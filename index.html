@@ -440,6 +440,8 @@
         for(const date of dates){
           loaded+=1;
           state.loadingDetail=`กำลังดึง ${thaiDate(date)} (${loaded}/${dates.length})`;
+          await loadLog(date);
+          loadWeight(date);
           render();
           try{
             const log=await sheetGet(storageKey(`log:${date}`));
@@ -508,6 +510,8 @@
       state.modal=null;
       saveUsers();
       await loadLog(state.viewDate,true);
+      // Restore the local weight immediately; sheet sync may be slow or unavailable.
+      loadWeight(state.viewDate,true);
       state.notice=`กำลังดึงข้อมูลของ ${userLabel()}...`;
       render();
       try{
